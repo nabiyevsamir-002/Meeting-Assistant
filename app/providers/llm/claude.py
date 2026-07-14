@@ -33,10 +33,13 @@ class ClaudeLLMProvider(BaseLLMProvider):
         temperature: float = 0.2,
         stop: Optional[list[str]] = None,
     ) -> str:
+        # Qeyd: yeni Claude modelləri (claude-sonnet-5 və sonrası) temperature
+        # parametrini qəbul etmir — ötürülərsə 400 xətası qayıdır.
+        # Köhnə modellərlə uyğunluq üçün əvvəl temperature ilə cəhd edirik,
+        # rədd edilərsə parametrsiz təkrarlayırıq.
         kwargs: dict = dict(
             model=self._model,
             max_tokens=max_tokens,
-            temperature=temperature,
             messages=[{"role": "user", "content": prompt}],
         )
         if system:
@@ -44,7 +47,12 @@ class ClaudeLLMProvider(BaseLLMProvider):
         if stop:
             # ReAct agent "\nObservation" stop ardıcıllığını ötürür
             kwargs["stop_sequences"] = [s for s in stop if s.strip()]
-        resp = self._client.messages.create(**kwargs)
+        try:
+            resp = self._client.messages.create(**kwargs, temperature=temperature)
+        except Exception as exc:  # noqa: BLE001
+            if "temperature" not in str(exc):
+                raise
+            resp = self._client.messages.create(**kwargs)
         return "".join(b.text for b in resp.content if b.type == "text")
 
     def generate_structured(

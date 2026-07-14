@@ -28,7 +28,7 @@ docker run --rm -p 80:80 \
   -v meeting-assistant_certbot_www:/var/www/certbot \
   certbot/certbot certonly --standalone \
   -d api.visualkey.az -d n8n.visualkey.az \
-  --email nabiyevsamir002@gmail.com --agree-tos --no-eff-email
+  --email nebiyevsamir002@gmail.com --agree-tos --no-eff-email
 
 echo "4/4 İstehsal stack-i (nginx + HTTPS) qaldırılır..."
 docker compose -f deploy/docker-compose.prod.yml up -d --build

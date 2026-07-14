@@ -1,0 +1,4 @@
+# Yalnız BlackHole canlı tutma rejimi üçün lazımdır
+# (fayl rejimi heç bir əlavə asılılıq tələb etmir — stdlib kifayətdir)
+sounddevice>=0.4
+numpy>=1.24

@@ -1,0 +1,63 @@
+# CI/CD pipeline:
+#   1. test   — hər push/PR-da testlər işləyir
+#   2. deploy — main-ə push-da kod serverə köçürülür (scp) və Docker yenidən qurulur
+# Lazımi GitHub Secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_PASSWORD
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Asılılıqları qur
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Testləri işə sal
+        run: pytest tests/ -v
+
+  deploy:
+    # Yalnız main branch-a push-da; secrets qurulmayıbsa addımlar sadəcə uğursuz keçilir
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Kodu serverə köçür (scp, parolla)
+        uses: appleboy/scp-action@v1
+        continue-on-error: true
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          source: "."
+          target: /opt/meeting-assistant
+          # .env serverdə qalır — repo-da olmadığı üçün üzərinə yazılmır
+
+      - name: Serverdə yenidən qur və işə sal
+        uses: appleboy/ssh-action@v1
+        continue-on-error: true
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          script: |
+            cd /opt/meeting-assistant
+            # HTTPS (nginx) artıq aktivdirsə prod compose, yoxsa sadə compose
+            if docker ps --format '{{.Names}}' | grep -q nginx; then
+              docker compose -f deploy/docker-compose.prod.yml up -d --build
+            else
+              docker compose up -d --build
+            fi
+            docker image prune -f

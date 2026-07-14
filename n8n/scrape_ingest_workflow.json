@@ -1,0 +1,209 @@
+{
+  "name": "Meeting Assistant — Scrape & Ingest",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "scrape-ingest",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "wh-1",
+      "name": "Webhook (sənəd sorğusu)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "scrape-ingest",
+      "notes": "Gözlənilən body: { \"url\": \"...\", \"source_type\": \"web|pdf|ocr\", \"meeting_topic\": \"...\" }"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "version": 2 },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.source_type }}",
+                    "rightValue": "web",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "web"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "version": 2 },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.source_type }}",
+                    "rightValue": "pdf",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pdf"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "version": 2 },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.source_type }}",
+                    "rightValue": "ocr",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ocr"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sw-1",
+      "name": "Mənbə növünə görə ayır",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.body.url }}",
+        "options": {}
+      },
+      "id": "http-web",
+      "name": "Veb səhifəni yüklə",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 100],
+      "notes": "JS ilə render olunan səhifələr üçün n8n-nodes-puppeteer community node-u ilə əvəzləyin"
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            { "key": "title", "cssSelector": "title" },
+            { "key": "content", "cssSelector": "body", "returnValue": "text" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "html-1",
+      "name": "HTML-dən mətn çıxar (Cheerio)",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [660, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.body.url }}",
+        "options": { "response": { "response": { "responseFormat": "file" } } }
+      },
+      "id": "http-pdf",
+      "name": "PDF faylını yüklə",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "pdf-1",
+      "name": "PDF-dən mətn çıxar",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.ocr.space/parse/imageurl",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.OCR_SPACE_API_KEY }}" },
+            { "name": "url", "value": "={{ $json.body.url }}" },
+            { "name": "language", "value": "eng" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ocr-1",
+      "name": "OCR.space ilə şəkildən mətn",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 500],
+      "notes": "OCR_SPACE_API_KEY-i n8n environment variables-a əlavə edin (pulsuz: ocr.space/ocrapi)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Üç budaqdan gələn nəticəni vahid ingest formatına salırıq\nconst webhookData = $('Webhook (sənəd sorğusu)').first().json.body;\nconst item = $input.first().json;\n\nlet title = webhookData.url || 'Sənəd';\nlet content = '';\n\nif (item.title && item.content) {\n  // Veb budağı (HTML Extract nəticəsi)\n  title = item.title;\n  content = item.content;\n} else if (item.text) {\n  // PDF budağı (Extract From File nəticəsi)\n  content = item.text;\n} else if (item.ParsedResults) {\n  // OCR budağı (OCR.space cavabı)\n  content = item.ParsedResults.map(r => r.ParsedText).join('\\n');\n}\n\n// Artıq boşluqları təmizləyirik\ncontent = (content || '').replace(/\\s+/g, ' ').trim();\n\nreturn [{ json: {\n  title,\n  content,\n  source_type: webhookData.source_type,\n  url: webhookData.url,\n  meeting_topic: webhookData.meeting_topic || null\n}}];"
+      },
+      "id": "code-1",
+      "name": "Normallaşdır və təmizlə",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.API_BASE_URL || 'http://app:8000' }}/api/ingest",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "http-ingest",
+      "name": "FastAPI /api/ingest-ə göndər",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 300],
+      "notes": "Docker-də app:8000, lokalda http://host.docker.internal:8000"
+    }
+  ],
+  "connections": {
+    "Webhook (sənəd sorğusu)": {
+      "main": [[{ "node": "Mənbə növünə görə ayır", "type": "main", "index": 0 }]]
+    },
+    "Mənbə növünə görə ayır": {
+      "main": [
+        [{ "node": "Veb səhifəni yüklə", "type": "main", "index": 0 }],
+        [{ "node": "PDF faylını yüklə", "type": "main", "index": 0 }],
+        [{ "node": "OCR.space ilə şəkildən mətn", "type": "main", "index": 0 }]
+      ]
+    },
+    "Veb səhifəni yüklə": {
+      "main": [[{ "node": "HTML-dən mətn çıxar (Cheerio)", "type": "main", "index": 0 }]]
+    },
+    "HTML-dən mətn çıxar (Cheerio)": {
+      "main": [[{ "node": "Normallaşdır və təmizlə", "type": "main", "index": 0 }]]
+    },
+    "PDF faylını yüklə": {
+      "main": [[{ "node": "PDF-dən mətn çıxar", "type": "main", "index": 0 }]]
+    },
+    "PDF-dən mətn çıxar": {
+      "main": [[{ "node": "Normallaşdır və təmizlə", "type": "main", "index": 0 }]]
+    },
+    "OCR.space ilə şəkildən mətn": {
+      "main": [[{ "node": "Normallaşdır və təmizlə", "type": "main", "index": 0 }]]
+    },
+    "Normallaşdır və təmizlə": {
+      "main": [[{ "node": "FastAPI /api/ingest-ə göndər", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

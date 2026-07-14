@@ -1,0 +1,87 @@
+# İstehsal stack-i (DigitalOcean, visualkey.az):
+#   nginx (80/443) -> app (FastAPI), qdrant, n8n, certbot
+# İşə salmaq (serverdə, layihə kökündən):
+#   docker compose -f deploy/docker-compose.prod.yml up -d --build
+# İlk dəfə HTTPS aktivləşdirmək üçün: bash deploy/activate_https.sh
+
+# Dev compose ilə eyni layihə adı — volume-lar (data, n8n hesabı) itmir
+name: meeting-assistant
+
+services:
+
+  app:
+    # Image birbaşa serverdə mənbədən qurulur — GHCR/registry tələb olunmur
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.prod
+    image: meeting-assistant:prod
+    restart: unless-stopped
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - VECTOR_BACKEND=auto
+      - N8N_DELIVERY_WEBHOOK_URL=http://n8n:5678/webhook/meeting-delivery
+      - SCHEDULER_ENABLED=true
+    env_file:
+      # Sirlər serverdəki .env faylından (yol compose faylına nisbətəndir)
+      - path: ../.env
+        required: false
+    volumes:
+      - app_data:/app/data
+    depends_on:
+      - qdrant
+    expose:
+      - "8000"
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    expose:
+      - "6333"
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    environment:
+      - API_BASE_URL=http://app:8000
+      - N8N_HOST=n8n.visualkey.az
+      - WEBHOOK_URL=https://n8n.visualkey.az/
+      # Workflow dəyişənləri .env-dən ötürülür
+      - OCR_SPACE_API_KEY=${OCR_SPACE_API_KEY:-}
+      - DELIVERY_FROM_EMAIL=${DELIVERY_FROM_EMAIL:-}
+      - DELIVERY_TO_EMAIL=${DELIVERY_TO_EMAIL:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    expose:
+      - "5678"
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx:/etc/nginx/conf.d:ro
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    depends_on:
+      - app
+      - n8n
+
+  # Certbot — sertifikatların avtomatik yenilənməsi (hər 12 saatdan bir yoxlayır)
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+volumes:
+  app_data:
+  qdrant_data:
+  n8n_data:
+  certbot_certs:
+  certbot_www:

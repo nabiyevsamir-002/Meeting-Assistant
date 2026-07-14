@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Mühit faylları — sirlər heç vaxt commit olunmur!
+.env
+.env.*
+!.env.example
+
+# Lokal verilənlər (SQLite, kartlar, outbox, audio)
+data/
+!data/.gitkeep
+
+# Google OAuth token
+google_token.json
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/

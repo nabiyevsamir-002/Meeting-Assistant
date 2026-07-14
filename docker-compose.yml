@@ -1,0 +1,53 @@
+# Lokal inkişaf stack-i: FastAPI + Qdrant + n8n
+# İşə salmaq: docker compose up -d --build
+# Açarsız da işləyir — provayderlər mock rejimdə olur.
+
+# Layihə adı sabitlənir ki, volume adları dev/prod compose arasında eyni qalsın
+name: meeting-assistant
+
+services:
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Konteyner daxilində Qdrant xidmət adı ilə tapılır
+      - QDRANT_URL=http://qdrant:6333
+      - VECTOR_BACKEND=auto
+      - N8N_DELIVERY_WEBHOOK_URL=http://n8n:5678/webhook/meeting-delivery
+    env_file:
+      - path: .env
+        required: false   # .env yoxdursa da işləsin (mock rejim)
+    volumes:
+      - app_data:/app/data
+    depends_on:
+      - qdrant
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      # FastAPI-yə konteyner şəbəkəsi üzərindən çıxış
+      - API_BASE_URL=http://app:8000
+      - N8N_SECURE_COOKIE=false
+      # Workflow-ların istifadə etdiyi dəyişənlər .env-dən ötürülür
+      - OCR_SPACE_API_KEY=${OCR_SPACE_API_KEY:-}
+      - DELIVERY_FROM_EMAIL=${DELIVERY_FROM_EMAIL:-}
+      - DELIVERY_TO_EMAIL=${DELIVERY_TO_EMAIL:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  app_data:
+  qdrant_data:
+  n8n_data:

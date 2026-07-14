@@ -1,0 +1,2 @@
+# Test asılılıqları
+pytest>=8.0

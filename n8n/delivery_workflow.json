@@ -1,0 +1,76 @@
+{
+  "name": "Meeting Assistant — Hesabat çatdırılması",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meeting-delivery",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "wh-2",
+      "name": "Webhook (hesabat)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "meeting-delivery",
+      "notes": "FastAPI iclas bitəndə bura POST edir: { meeting_id, topic, summary, action_items, card_url }"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Hesabat payload-undan oxunaqlı email/Telegram mətni qururuq\nconst p = $input.first().json.body;\nconst s = p.summary || {};\n\nconst actions = (p.action_items || [])\n  .map(a => `• ${a.task}${a.owner ? ' — ' + a.owner : ''}${a.due ? ' (' + a.due + ')' : ''}`)\n  .join('\\n');\n\nconst text = [\n  `📋 İclas hesabatı: ${p.topic}`,\n  '',\n  `${s.headline || ''}`,\n  `${s.overview || ''}`,\n  '',\n  '✅ Əsas məqamlar:',\n  ...(s.key_points || []).map(k => `• ${k}`),\n  '',\n  '🎯 Növbəti addımlar:',\n  actions || '• (yoxdur)',\n  '',\n  p.card_url ? `🖼 Xülasə kartı: ${p.card_url}` : ''\n].join('\\n');\n\nreturn [{ json: { subject: `İclas hesabatı: ${p.topic}`, text, card_url: p.card_url } }];"
+      },
+      "id": "code-2",
+      "name": "Mesaj mətnini formatla",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.DELIVERY_FROM_EMAIL }}",
+        "toEmail": "={{ $env.DELIVERY_TO_EMAIL }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {}
+      },
+      "id": "email-1",
+      "name": "Email göndər (SMTP)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [440, 180],
+      "credentials": {},
+      "notes": "n8n-də SMTP credential yaradın (məs. Gmail App Password). ENV: DELIVERY_FROM_EMAIL, DELIVERY_TO_EMAIL"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {}
+      },
+      "id": "tg-1",
+      "name": "Telegram-a göndər",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [440, 420],
+      "credentials": {},
+      "notes": "BotFather ilə bot yaradıb n8n-də Telegram credential əlavə edin. ENV: TELEGRAM_CHAT_ID"
+    }
+  ],
+  "connections": {
+    "Webhook (hesabat)": {
+      "main": [[{ "node": "Mesaj mətnini formatla", "type": "main", "index": 0 }]]
+    },
+    "Mesaj mətnini formatla": {
+      "main": [
+        [
+          { "node": "Email göndər (SMTP)", "type": "main", "index": 0 },
+          { "node": "Telegram-a göndər", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {}
+}

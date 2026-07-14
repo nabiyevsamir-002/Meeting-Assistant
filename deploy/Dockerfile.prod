@@ -1,0 +1,30 @@
+# İstehsal üçün image — multi-stage, root olmayan istifadəçi
+# Build: docker build -f deploy/Dockerfile.prod -t meeting-assistant:latest .
+
+# --- Mərhələ 1: asılılıqların qurulması ---
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+COPY requirements.txt .
+# Virtual mühitə qururuq ki, ikinci mərhələyə təmiz köçürək
+RUN python -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+# --- Mərhələ 2: yüngül runtime ---
+FROM python:3.11-slim
+
+# Təhlükəsizlik: root olmayan istifadəçi
+RUN useradd --create-home appuser
+WORKDIR /app
+
+COPY --from=builder /opt/venv /opt/venv
+COPY app ./app
+
+RUN mkdir -p data && chown -R appuser:appuser /app
+USER appuser
+
+ENV PATH="/opt/venv/bin:$PATH"
+EXPOSE 8000
+
+# İstehsalda birdən çox worker
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

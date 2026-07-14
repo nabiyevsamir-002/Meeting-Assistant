@@ -88,7 +88,12 @@ class Mem0LongTermMemory(BaseLongTermMemory):
         )
 
     def search(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
-        res = self._memory.search(query, user_id="samir", limit=limit)
+        # mem0-un yeni versiyaları user_id-ni filters içində istəyir,
+        # köhnələri isə birbaşa parametr kimi — hər ikisini dəstəkləyirik
+        try:
+            res = self._memory.search(query, filters={"user_id": "samir"}, limit=limit)
+        except (TypeError, ValueError):
+            res = self._memory.search(query, user_id="samir", limit=limit)
         results = res.get("results", res) if isinstance(res, dict) else res
         return [
             {"text": r.get("memory", ""), "meta": r.get("metadata", {}),

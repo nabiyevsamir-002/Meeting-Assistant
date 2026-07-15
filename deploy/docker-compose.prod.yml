@@ -47,7 +47,10 @@ services:
       - API_BASE_URL=http://app:8000
       - N8N_HOST=n8n.visualkey.az
       - WEBHOOK_URL=https://n8n.visualkey.az/
+      # n8n 2.x node-larda $env istifadəsini defolt bloklayır — açırıq
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       # Workflow dəyişənləri .env-dən ötürülür
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-}
       - OCR_SPACE_API_KEY=${OCR_SPACE_API_KEY:-}
       - DELIVERY_FROM_EMAIL=${DELIVERY_FROM_EMAIL:-}
       - DELIVERY_TO_EMAIL=${DELIVERY_TO_EMAIL:-}

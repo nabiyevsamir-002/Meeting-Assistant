@@ -7,7 +7,7 @@ Authorization: Bearer <token> tələb edəcək.
 from typing import Optional
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import get_settings
@@ -18,11 +18,16 @@ _bearer = HTTPBearer(auto_error=False)
 
 def require_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+    x_api_key: Optional[str] = Header(default=None),
 ) -> str:
     """Cari istifadəçinin adını qaytarır; token etibarsızdırsa 401."""
     settings = get_settings()
     if not settings.auth_enabled:
         return "dev"  # inkişaf rejimi — yoxlamasız
+
+    # Daxili servislər (n8n workflow-ları) JWT əvəzinə sabit X-API-Key göndərir
+    if settings.internal_api_key and x_api_key == settings.internal_api_key:
+        return "internal"
 
     if credentials is None:
         raise HTTPException(

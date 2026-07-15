@@ -39,7 +39,11 @@ services:
       # FastAPI-yə konteyner şəbəkəsi üzərindən çıxış
       - API_BASE_URL=http://app:8000
       - N8N_SECURE_COOKIE=false
+      # n8n 2.x node-larda $env istifadəsini defolt bloklayır — workflow-larımız
+      # üçün açırıq (yalnız aşağıdakı zərərsiz dəyişənlər ötürülür)
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       # Workflow-ların istifadə etdiyi dəyişənlər .env-dən ötürülür
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-}
       - OCR_SPACE_API_KEY=${OCR_SPACE_API_KEY:-}
       - DELIVERY_FROM_EMAIL=${DELIVERY_FROM_EMAIL:-}
       - DELIVERY_TO_EMAIL=${DELIVERY_TO_EMAIL:-}

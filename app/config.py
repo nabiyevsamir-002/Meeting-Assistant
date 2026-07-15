@@ -29,6 +29,9 @@ class Settings(BaseSettings):
 
     # --- Autentifikasiya (JWT) ---
     auth_enabled: bool = False
+    # Daxili servislər (n8n) üçün API açarı — JWT müddəti bitən token əvəzinə
+    # X-API-Key başlığı ilə sabit giriş imkanı verir
+    internal_api_key: str = ""
     jwt_secret: str = "dev-secret-mutleq-deyisin-minimum-32-bayt-olsun"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 120

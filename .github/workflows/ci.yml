@@ -56,7 +56,7 @@ jobs:
             cd /opt/meeting-assistant
             # HTTPS (nginx) artıq aktivdirsə prod compose, yoxsa sadə compose
             if docker ps --format '{{.Names}}' | grep -q nginx; then
-              docker compose -f deploy/docker-compose.prod.yml up -d --build
+              docker compose --project-directory . -f deploy/docker-compose.prod.yml up -d --build
             else
               docker compose up -d --build
             fi

@@ -31,7 +31,8 @@ docker run --rm -p 80:80 \
   --email nebiyevsamir002@gmail.com --agree-tos --no-eff-email
 
 echo "4/4 İstehsal stack-i (nginx + HTTPS) qaldırılır..."
-docker compose -f deploy/docker-compose.prod.yml up -d --build
+# --project-directory vacibdir: .env interpolyasiyası layihə kökündən oxunsun
+docker compose --project-directory . -f deploy/docker-compose.prod.yml up -d --build
 
 echo ""
 echo "✅ Hazırdır:"

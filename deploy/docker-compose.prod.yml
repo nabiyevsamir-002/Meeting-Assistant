@@ -1,7 +1,8 @@
 # İstehsal stack-i (DigitalOcean, visualkey.az):
 #   nginx (80/443) -> app (FastAPI), qdrant, n8n, certbot
-# İşə salmaq (serverdə, layihə kökündən):
-#   docker compose -f deploy/docker-compose.prod.yml up -d --build
+# İşə salmaq (serverdə, MÜTLƏQ layihə kökündən və --project-directory ilə):
+#   docker compose --project-directory . -f deploy/docker-compose.prod.yml up -d --build
+# Qeyd: .env interpolyasiyası və bütün nisbi yollar layihə kökünə görədir.
 # İlk dəfə HTTPS aktivləşdirmək üçün: bash deploy/activate_https.sh
 
 # Dev compose ilə eyni layihə adı — volume-lar (data, n8n hesabı) itmir
@@ -12,7 +13,7 @@ services:
   app:
     # Image birbaşa serverdə mənbədən qurulur — GHCR/registry tələb olunmur
     build:
-      context: ..
+      context: .
       dockerfile: deploy/Dockerfile.prod
     image: meeting-assistant:prod
     restart: unless-stopped
@@ -22,8 +23,8 @@ services:
       - N8N_DELIVERY_WEBHOOK_URL=http://n8n:5678/webhook/meeting-delivery
       - SCHEDULER_ENABLED=true
     env_file:
-      # Sirlər serverdəki .env faylından (yol compose faylına nisbətəndir)
-      - path: ../.env
+      # Sirlər serverdəki .env faylından (yol layihə kökünə nisbətəndir)
+      - path: .env
         required: false
     volumes:
       - app_data:/app/data
@@ -67,7 +68,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx:/etc/nginx/conf.d:ro
+      - ./deploy/nginx:/etc/nginx/conf.d:ro
       - certbot_certs:/etc/letsencrypt:ro
       - certbot_www:/var/www/certbot:ro
     depends_on:

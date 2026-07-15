@@ -128,7 +128,7 @@ docker run --rm -p 80:80 \
 Stack-i qaldır:
 
 ```bash
-docker compose -f deploy/docker-compose.prod.yml up -d
+docker compose --project-directory . -f deploy/docker-compose.prod.yml up -d
 curl https://api.<domen>/health    # {"status":"ok",...}
 ```
 

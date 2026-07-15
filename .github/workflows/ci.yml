@@ -57,6 +57,10 @@ jobs:
             # HTTPS (nginx) artıq aktivdirsə prod compose, yoxsa sadə compose
             if docker ps --format '{{.Names}}' | grep -q nginx; then
               docker compose --project-directory . -f deploy/docker-compose.prod.yml up -d --build
+              # n8n konteyner yenidən yaradılanda webhook-lar qeydiyyatdan düşə bilir —
+              # tam stop/start onları deterministik şəkildə yenidən qeydiyyata alır
+              docker compose --project-directory . -f deploy/docker-compose.prod.yml stop n8n
+              docker compose --project-directory . -f deploy/docker-compose.prod.yml start n8n
             else
               docker compose up -d --build
             fi

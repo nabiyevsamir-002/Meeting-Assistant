@@ -12,7 +12,10 @@
       "name": "Webhook (hesabat)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 300],
+      "position": [
+        0,
+        300
+      ],
       "webhookId": "meeting-delivery",
       "notes": "FastAPI iclas bitəndə bura POST edir: { meeting_id, topic, summary, action_items, card_url }"
     },
@@ -24,7 +27,10 @@
       "name": "Mesaj mətnini formatla",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 300]
+      "position": [
+        220,
+        300
+      ]
     },
     {
       "parameters": {
@@ -39,9 +45,13 @@
       "name": "Email göndər (SMTP)",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
-      "position": [440, 180],
+      "position": [
+        440,
+        180
+      ],
       "credentials": {},
-      "notes": "n8n-də SMTP credential yaradın (məs. Gmail App Password). ENV: DELIVERY_FROM_EMAIL, DELIVERY_TO_EMAIL"
+      "notes": "n8n-də SMTP credential yaradın (məs. Gmail App Password). ENV: DELIVERY_FROM_EMAIL, DELIVERY_TO_EMAIL",
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -53,24 +63,46 @@
       "name": "Telegram-a göndər",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [440, 420],
+      "position": [
+        440,
+        420
+      ],
       "credentials": {},
-      "notes": "BotFather ilə bot yaradıb n8n-də Telegram credential əlavə edin. ENV: TELEGRAM_CHAT_ID"
+      "notes": "BotFather ilə bot yaradıb n8n-də Telegram credential əlavə edin. ENV: TELEGRAM_CHAT_ID",
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {
     "Webhook (hesabat)": {
-      "main": [[{ "node": "Mesaj mətnini formatla", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Mesaj mətnini formatla",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Mesaj mətnini formatla": {
       "main": [
         [
-          { "node": "Email göndər (SMTP)", "type": "main", "index": 0 },
-          { "node": "Telegram-a göndər", "type": "main", "index": 0 }
+          {
+            "node": "Email göndər (SMTP)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Telegram-a göndər",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     }
   },
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "pinData": {}
 }

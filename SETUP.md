@@ -66,8 +66,9 @@ Docker ilə (Qdrant + n8n daxil): `make compose-up`
 ### 7. BlackHole (Mac sistem səsi)
 | | |
 |---|---|
-| Quraşdırma | `brew install blackhole-2ch` → **Audio MIDI Setup** proqramı → sol aşağıda "+" → *Create Multi-Output Device* → həm dinamiklərinizi, həm BlackHole 2ch-i seçin → iclas zamanı sistem səs çıxışını bu Multi-Output-a keçirin |
-| İstifadə | `pip install -r capture/requirements.txt` → `python capture/capture_blackhole.py --meeting-id <ID>` |
+| Quraşdırma | `brew install blackhole-2ch` (restart tələb edir) → **Audio MIDI Setup** proqramı → sol aşağıda "+" → *Create Multi-Output Device* → həm dinamiklərinizi, həm BlackHole 2ch-i seçin → iclas zamanı sistem səs çıxışını bu Multi-Output-a keçirin |
+| **Avtomatik rejim (tövsiyə)** | `bash capture/install_agent.sh` — bir dəfəlik. Bundan sonra Mac açılanda agent arxa planda işləyir və UI-da "Başlat" basdığınız an səsi özü tutmağa başlayır, "Bitir"də dayanır. Loglar: `~/Library/Logs/meeting-assistant-capture.log`. Silmək: `bash capture/uninstall_agent.sh` |
+| Əl ilə rejim | `python capture/capture_blackhole.py --meeting-id <ID> --username <ad> --password <şifrə>` |
 | Alternativ | BlackHole olmadan: `python capture/send_file.py --meeting-id <ID> --file iclas.wav` (fayl rejimi) |
 
 ### 8. Qdrant (vektor bazası)

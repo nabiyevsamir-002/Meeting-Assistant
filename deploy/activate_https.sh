@@ -34,6 +34,11 @@ echo "4/4 İstehsal stack-i (nginx + HTTPS) qaldırılır..."
 # --project-directory vacibdir: .env interpolyasiyası layihə kökündən oxunsun
 docker compose --project-directory . -f deploy/docker-compose.prod.yml up -d --build
 
+# Dev stack-dən qalan data volume-u root-a məxsusdur; prod image isə
+# root olmayan appuser ilə işləyir — sahibliyi düzəldirik (idempotentdir)
+docker compose --project-directory . -f deploy/docker-compose.prod.yml \
+  exec -T -u root app chown -R appuser:appuser /app/data || true
+
 echo ""
 echo "✅ Hazırdır:"
 echo "   https://api.visualkey.az/health"

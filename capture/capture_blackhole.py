@@ -67,6 +67,17 @@ def record_chunk(device: int) -> bytes:
     return buf.getvalue()
 
 
+def get_token(api: str, username: str, password: str) -> str:
+    """İstifadəçi adı/şifrə ilə JWT alır — token-i əl ilə kopyalamağa ehtiyac qalmır."""
+    resp = httpx.post(
+        f"{api}/api/auth/token",
+        json={"username": username, "password": password},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()["access_token"]
+
+
 def send_chunk(api: str, meeting_id: str, audio: bytes, token: str | None) -> None:
     """Parçanı API-yə göndərir; cavabdakı transkripti çap edir."""
     headers = {"Authorization": f"Bearer {token}"} if token else {}
@@ -86,9 +97,16 @@ def main() -> None:
     parser.add_argument("--meeting-id", required=True, help="Canlı iclasın ID-si")
     parser.add_argument("--api", default="http://localhost:8000", help="API ünvanı")
     parser.add_argument("--token", default=None, help="JWT token (AUTH_ENABLED=true isə)")
+    parser.add_argument("--username", default=None, help="UI istifadəçi adı (token əvəzinə)")
+    parser.add_argument("--password", default=None, help="UI şifrəsi (token əvəzinə)")
     parser.add_argument("--device", default="blackhole",
                         help="Giriş cihazının adı (öz səsiniz üçün Aggregate Device adını verin)")
     args = parser.parse_args()
+
+    # Token verilməyibsə, istifadəçi adı/şifrə ilə özümüz alırıq
+    if not args.token and args.username:
+        args.token = get_token(args.api, args.username, args.password or "")
+        print("Token alındı ✅")
 
     device = find_device(args.device)
     print(f"Cihaz tapıldı (#{device}). {CHUNK_SECONDS}s parçalarla yazılır. Ctrl+C = dayandır.")

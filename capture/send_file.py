@@ -43,9 +43,20 @@ def main() -> None:
     parser.add_argument("--file", required=True, help="WAV faylının yolu")
     parser.add_argument("--api", default="http://localhost:8000")
     parser.add_argument("--token", default=None, help="JWT token (AUTH_ENABLED=true isə)")
+    parser.add_argument("--username", default=None, help="UI istifadəçi adı (token əvəzinə)")
+    parser.add_argument("--password", default=None, help="UI şifrəsi (token əvəzinə)")
     parser.add_argument("--realtime", action="store_true",
                         help="Parçalar arasında real gecikmə saxla (canlı simulyasiya)")
     args = parser.parse_args()
+
+    # Token verilməyibsə, istifadəçi adı/şifrə ilə özümüz alırıq
+    if not args.token and args.username:
+        resp = httpx.post(f"{args.api}/api/auth/token",
+                          json={"username": args.username, "password": args.password or ""},
+                          timeout=30)
+        resp.raise_for_status()
+        args.token = resp.json()["access_token"]
+        print("Token alındı ✅")
 
     headers = {"Authorization": f"Bearer {args.token}"} if args.token else {}
     for i, chunk in enumerate(iter_wav_chunks(args.file), start=1):

@@ -154,6 +154,18 @@
         və sizə cavab variantları təklif ediləcək.</p>
       <button class="big" onclick="startMeeting()">▶ İclası başlat</button>
     </div>
+    <div class="card">
+      <h2>📚 Bilik bazası <span class="chip">istəyə bağlı</span></h2>
+      <p class="hint">İclas mövzusu ilə bağlı sənədləri əvvəlcədən yükləyin —
+        AI suallara cavab verərkən bunlara əsaslanacaq (PDF və ya mətn faylı).</p>
+      <input type="file" id="docfile" accept=".pdf,.txt,.md"
+             style="margin-bottom:10px; font-size:14px;">
+      <div class="row">
+        <button class="ghost" onclick="uploadDoc()">⬆️ Faylı yüklə</button>
+        <button class="ghost" onclick="testSearch()">🔍 Bazada yoxla</button>
+      </div>
+      <p class="hint" id="docstatus" style="margin-top:10px"></p>
+    </div>
   </section>
 
   <!-- ADDIM 3: canlı -->
@@ -169,6 +181,10 @@
         <button class="ghost" onclick="sendDemo()">🎲 Nümunə cümlə göndər (test)</button>
         <button class="danger" id="endbtn" onclick="endMeeting()">⏹ İclası bitir</button>
       </div>
+      <p class="hint" style="margin-top:12px; margin-bottom:4px">
+        🎙 Real iclas səsi üçün Mac terminalında (klikləyin — kopyalansın):</p>
+      <div class="opt" onclick="copyAnswer(this)" id="capcmd" data-text=""
+           style="font-family:monospace; font-size:12px; word-break:break-all"></div>
     </div>
     <div id="busy"><div class="spin"></div><span id="busytext">AI təhlil edir…</span></div>
     <div id="feed"></div>
@@ -229,6 +245,7 @@ async function doLogin() {
     });
     token = d.access_token;
     localStorage.setItem('token', token);
+    localStorage.setItem('username', $('lu').value);  // capture komandası üçün
     $('login').style.display = 'none';
     toast('Daxil oldunuz ✅');
     init();
@@ -280,6 +297,7 @@ async function pickMeeting(id) {
   $('feed').innerHTML = '';
   $('m2topic').textContent = meeting.topic;
   $('m3topic').textContent = '🔴 ' + meeting.topic;
+  setCapCmd();
   const step = stepOf(meeting);
   if (step === 4) await renderReport();
   showStep(step);
@@ -305,6 +323,7 @@ async function startMeeting() {
   $('m3topic').textContent = '🔴 ' + meeting.topic;
   $('feed').innerHTML = '';
   lastId = 0;
+  setCapCmd();
   await refreshPicker();
   showStep(3);
 }
@@ -375,6 +394,40 @@ function copyAnswer(el) {
   navigator.clipboard.writeText(el.dataset.text)
     .then(() => toast('Kopyalandı ✅'))
     .catch(() => toast('Kopyalama alınmadı'));
+}
+
+/* --- Bilik bazası (Addım 2) --- */
+async function uploadDoc() {
+  const f = $('docfile').files[0];
+  if (!f) { toast('Əvvəlcə fayl seçin'); return; }
+  const fd = new FormData();          // Content-Type-ı brauzer özü qoyur
+  fd.append('file', f);
+  $('docstatus').textContent = '⏳ Yüklənir və indekslənir…';
+  try {
+    const r = await api('/api/ingest/file', { method: 'POST', body: fd });
+    $('docstatus').textContent =
+      `✅ «${r.title}» yükləndi — ${r.chunk_count} parça (${r.backend})`;
+    $('docfile').value = '';
+  } catch (e) { $('docstatus').textContent = '❌ Yükləmə alınmadı'; }
+}
+
+async function testSearch() {
+  // Sorğu kimi iclasın mövzusunu istifadə edirik — dialoqsuz, sadə yoxlama
+  const query = (meeting && meeting.topic) || 'layihə';
+  const hits = await api('/api/ingest/search?q=' + encodeURIComponent(query));
+  $('docstatus').textContent = hits.length
+    ? `🔍 «${query}» üçün ${hits.length} nəticə. Ən uyğunu: «${(hits[0].text || '').slice(0, 110)}…»`
+    : `🔍 «${query}» üçün nəticə yoxdur — əvvəlcə sənəd yükləyin.`;
+}
+
+/* --- Canlı iclas üçün hazır capture komandası --- */
+function setCapCmd() {
+  if (!meeting) return;
+  const user = localStorage.getItem('username') || 'samir';
+  const cmd = `python3 capture/capture_blackhole.py --meeting-id ${meeting.id} ` +
+              `--api ${location.origin} --username ${user} --password <şifrəniz>`;
+  $('capcmd').textContent = cmd;
+  $('capcmd').dataset.text = cmd;
 }
 
 /* --- Addım 3 -> 4: bitir və hesabat --- */

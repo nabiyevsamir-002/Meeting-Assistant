@@ -193,4 +193,12 @@ def end_meeting(meeting: Meeting) -> Meeting:
     from app.services.post_meeting import run_post_meeting_pipeline
 
     run_post_meeting_pipeline(meeting)
+    # Bitmiş iclasın runtime-ı artıq lazım deyil — yaddaş sızmasının qarşısını alırıq
+    # (pipeline entity yaddaşını istifadə etdiyi üçün yalnız ondan SONRA silinir)
+    _registry.pop(meeting.id, None)
     return meeting
+
+
+def forget_meeting(meeting_id: str) -> None:
+    """İclas silinəndə runtime reyestrini də təmizləyir."""
+    _registry.pop(meeting_id, None)

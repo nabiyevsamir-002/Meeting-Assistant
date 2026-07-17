@@ -101,6 +101,22 @@ def test_full_meeting_lifecycle(client):
     assert len(data["episodes"]) >= 1 or len(data["long_term"]) >= 1
 
 
+def test_delete_meeting(client):
+    """İclas silinməli, canlı iclas isə silinməkdən qorunmalıdır."""
+    m = client.post("/api/meetings", json={"topic": "Silinəcək iclas"}).json()
+    mid = m["id"]
+
+    # Canlı iclası silmək olmaz
+    client.post(f"/api/meetings/{mid}/start")
+    assert client.delete(f"/api/meetings/{mid}").status_code == 409
+
+    # Bitmiş iclas silinir və artıq tapılmır
+    client.post(f"/api/meetings/{mid}/end")
+    assert client.delete(f"/api/meetings/{mid}").status_code == 200
+    assert client.get(f"/api/meetings/{mid}").status_code == 404
+    assert client.get(f"/api/meetings/{mid}/report").status_code == 404
+
+
 def test_calendar_and_scheduler_prepare(client):
     """Mock təqvimdən yaxın iclas üçün qeyd yaradılmalıdır."""
     events = client.get("/api/calendar/upcoming").json()

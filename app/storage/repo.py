@@ -38,6 +38,15 @@ def list_meetings() -> list[Meeting]:
     return [Meeting(**dict(r)) for r in rows]
 
 
+def delete_meeting(meeting_id: str) -> None:
+    """İclası bütün əlaqəli məlumatları ilə birlikdə silir."""
+    with get_conn() as c:
+        c.execute("DELETE FROM meetings WHERE id=?", (meeting_id,))
+        c.execute("DELETE FROM segments WHERE meeting_id=?", (meeting_id,))
+        c.execute("DELETE FROM feed_events WHERE meeting_id=?", (meeting_id,))
+        c.execute("DELETE FROM reports WHERE meeting_id=?", (meeting_id,))
+
+
 def find_meeting_by_topic(topic: str) -> Optional[Meeting]:
     """Mövzuya görə iclas axtarır (planlayıcı dublikat yaratmasın deyə)."""
     with get_conn() as c:

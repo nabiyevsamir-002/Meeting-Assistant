@@ -201,8 +201,11 @@ def synthesize_summary_audio(meeting_id: str) -> Optional[str]:
     if not report:
         return None
     tts = get_tts()
+    path = get_settings().data_path("tts", f"{meeting_id}.{tts.extension}")
+    # Keş: eyni hesabat üçün təkrar sintez etmirik (API xərcinə qənaət)
+    if path.exists():
+        return str(path)
     text = report.summary.get("overview", "") or report.summary.get("headline", "")
     audio = tts.synthesize(text)
-    path = get_settings().data_path("tts", f"{meeting_id}.{tts.extension}")
     path.write_bytes(audio)
     return str(path)

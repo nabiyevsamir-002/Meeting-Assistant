@@ -46,6 +46,17 @@ def get_meeting(meeting_id: str) -> Meeting:
     return _get_or_404(meeting_id)
 
 
+@router.delete("/{meeting_id}")
+def delete_meeting(meeting_id: str) -> dict:
+    """İclası bütün məlumatları ilə silir (köhnə test iclaslarını təmizləmək üçün)."""
+    meeting = _get_or_404(meeting_id)
+    if meeting.status == "live":
+        raise HTTPException(status_code=409, detail="Canlı iclası əvvəlcə bitirin")
+    repo.delete_meeting(meeting_id)
+    meeting_service.forget_meeting(meeting_id)
+    return {"deleted": meeting_id}
+
+
 @router.post("/{meeting_id}/start", response_model=Meeting)
 def start_meeting(meeting_id: str) -> Meeting:
     """İclası canlı rejimə keçirir."""

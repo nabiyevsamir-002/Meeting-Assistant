@@ -8,9 +8,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Tətbiq kodu
+# Tətbiq kodu (capture/ image-ə salınmır — o, istifadəçinin Mac-ində işləyir)
 COPY app ./app
-COPY capture ./capture
 
 # data/ qovluğu volume kimi bağlanacaq
 RUN mkdir -p data

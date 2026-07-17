@@ -6,186 +6,330 @@
 <title>AI Meeting Assistant</title>
 <style>
   /* ================================================================
-     Sadə, bələdçili UI — istifadəçi 4 addımlıq xətti axınla aparılır:
-     1) Yarat  2) Başlat  3) Canlı iclas  4) Hesabat
-     Heç bir framework yoxdur — təmiz HTML/CSS/JS.
+     Premium, bələdçili UI — 4 addımlıq xətti axın:
+     1) Yarat  2) Hazırla  3) Canlı iclas  4) Hesabat
+     Framework yoxdur: təmiz HTML/CSS/JS, GPU-dostu animasiyalar
+     (yalnız transform/opacity), prefers-reduced-motion dəstəyi.
      ================================================================ */
   :root {
-    --bg:#f4f6fb; --card:#ffffff; --text:#1e293b; --muted:#64748b;
-    --line:#e2e8f0; --accent:#2563eb; --accent-soft:#dbeafe;
-    --green:#16a34a; --green-soft:#dcfce7;
-    --orange:#d97706; --orange-soft:#fef3c7;
-    --purple:#7c3aed; --purple-soft:#ede9fe;
+    --bg:#f6f7fb; --card:#ffffff; --text:#111827; --muted:#6b7280;
+    --line:#e5e7eb; --line2:#d1d5db;
+    --a1:#4f46e5; --a2:#7c3aed;                    /* gradient aksent */
+    --accent:var(--a1); --accent-soft:#eef2ff;
+    --green:#059669; --green-soft:#ecfdf5; --green-line:#a7f3d0;
+    --amber:#d97706; --amber-soft:#fffbeb; --amber-line:#fde68a;
+    --red:#dc2626;   --red-soft:#fef2f2;
+    --violet:#7c3aed; --violet-soft:#f5f3ff;
+    --shadow:0 1px 2px rgba(17,24,39,.04), 0 8px 24px -12px rgba(17,24,39,.12);
+    --shadow-lg:0 4px 6px -4px rgba(79,70,229,.2), 0 16px 40px -12px rgba(79,70,229,.35);
+    --radius:18px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0b1020; --card:#141a2e; --text:#e5e9f5; --muted:#8b93ab;
+      --line:#232b45; --line2:#2e3860;
+      --accent-soft:#1d2246; --green-soft:#0c2b22; --green-line:#155e46;
+      --amber-soft:#2b220c; --amber-line:#6b5416; --red-soft:#2d1416;
+      --violet-soft:#221a3a;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+    }
   }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text);
-         font-family:-apple-system,'Segoe UI',Roboto,sans-serif; }
+  /* Author display:* qaydaları hidden atributunu üstələməsin */
+  [hidden] { display:none !important; }
+  html { -webkit-text-size-adjust:100%; }
+  body {
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;
+    font-size:15px; line-height:1.55;
+    /* Zərif fon naxışı — dərinlik hissi verir */
+    background-image:radial-gradient(1200px 500px at 50% -10%, rgba(79,70,229,.07), transparent 60%);
+  }
 
-  /* --- Yuxarı panel --- */
-  header { background:var(--card); border-bottom:1px solid var(--line);
-           padding:14px 20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  header h1 { font-size:17px; margin:0; }
-  .chip { font-size:12px; padding:4px 10px; border-radius:99px;
-          background:var(--line); color:var(--muted); white-space:nowrap; }
+  /* --- Yapışqan şüşə header --- */
+  header {
+    position:sticky; top:0; z-index:20;
+    background:color-mix(in srgb, var(--card) 78%, transparent);
+    -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+    border-bottom:1px solid var(--line);
+    padding:12px clamp(14px,4vw,28px);
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  }
+  .logo { display:flex; align-items:center; gap:10px; font-weight:700;
+          font-size:16px; letter-spacing:-.02em; }
+  .logo .dot {
+    width:30px; height:30px; border-radius:9px; flex:none;
+    background:linear-gradient(135deg,var(--a1),var(--a2));
+    display:grid; place-items:center; color:#fff; font-size:15px;
+    box-shadow:0 4px 12px -4px rgba(79,70,229,.5);
+  }
+  .chip { font-size:11.5px; font-weight:600; padding:4px 11px; border-radius:99px;
+          background:var(--accent-soft); color:var(--accent); white-space:nowrap; }
   .chip.live { background:var(--green-soft); color:var(--green); }
-  select { border:1px solid var(--line); border-radius:10px; padding:8px 10px;
-           font-size:14px; background:var(--card); color:var(--text); max-width:260px; }
   .spacer { flex:1; }
+  .picker-wrap { display:flex; gap:8px; align-items:center; }
+  select {
+    border:1px solid var(--line2); border-radius:11px; padding:8px 12px;
+    font-size:13.5px; background:var(--card); color:var(--text); max-width:250px;
+    outline:none; transition:border-color .15s;
+  }
+  select:focus { border-color:var(--accent); }
+  .iconbtn {
+    border:1px solid var(--line2); background:var(--card); color:var(--muted);
+    width:36px; height:36px; border-radius:11px; cursor:pointer; font-size:15px;
+    display:grid; place-items:center; transition:all .15s; flex:none; padding:0;
+  }
+  .iconbtn:hover { color:var(--red); border-color:var(--red); background:var(--red-soft); }
+  .iconbtn.armed { color:#fff; background:var(--red); border-color:var(--red); }
 
   /* --- Kontent --- */
-  .wrap { max-width:720px; margin:0 auto; padding:20px 16px 60px; }
+  .wrap { max-width:680px; margin:0 auto; padding:26px clamp(14px,4vw,24px) 80px; }
 
-  /* Addım göstəricisi */
-  .steps { display:flex; gap:6px; list-style:none; padding:0; margin:0 0 20px; }
-  .steps li { flex:1; text-align:center; font-size:12px; color:var(--muted);
-              padding:8px 4px; border-radius:10px; background:var(--card);
-              border:1px solid var(--line); }
-  .steps li b { display:block; font-size:14px; }
-  .steps li.active { background:var(--accent); border-color:var(--accent); color:#fff; }
-  .steps li.done { background:var(--accent-soft); border-color:var(--accent-soft);
-                   color:var(--accent); }
+  /* --- Proqres stepper: xətlə birləşən 4 nöqtə --- */
+  .steps { display:flex; align-items:flex-start; margin:2px 0 26px;
+           list-style:none; padding:0; }
+  .steps li { flex:1; text-align:center; position:relative; }
+  .steps li::before {                       /* birləşdirici xətt */
+    content:""; position:absolute; top:15px; left:-50%; width:100%; height:2.5px;
+    background:var(--line2); z-index:0; transition:background .4s;
+  }
+  .steps li:first-child::before { display:none; }
+  .steps li.done::before, .steps li.active::before {
+    background:linear-gradient(90deg,var(--a1),var(--a2));
+  }
+  .steps .node {
+    width:32px; height:32px; border-radius:50%; margin:0 auto;
+    display:grid; place-items:center; font-size:13px; font-weight:700;
+    background:var(--card); border:2.5px solid var(--line2); color:var(--muted);
+    position:relative; z-index:1; transition:all .3s;
+  }
+  .steps li.active .node {
+    border-color:transparent; color:#fff;
+    background:linear-gradient(135deg,var(--a1),var(--a2));
+    box-shadow:0 0 0 5px color-mix(in srgb, var(--a1) 15%, transparent);
+    transform:scale(1.12);
+  }
+  .steps li.done .node { border-color:var(--a1); color:var(--a1); background:var(--accent-soft); }
+  .steps .lbl { font-size:11.5px; font-weight:600; color:var(--muted); margin-top:7px;
+                letter-spacing:.02em; }
+  .steps li.active .lbl { color:var(--accent); }
 
-  .card { background:var(--card); border:1px solid var(--line);
-          border-radius:16px; padding:20px; margin-bottom:14px; }
-  .card h2 { margin:0 0 4px; font-size:18px; }
-  .hint { color:var(--muted); font-size:14px; margin:0 0 16px; line-height:1.5; }
+  /* --- Kartlar --- */
+  .card {
+    background:var(--card); border:1px solid var(--line);
+    border-radius:var(--radius); padding:clamp(18px,4vw,26px); margin-bottom:16px;
+    box-shadow:var(--shadow);
+    animation:rise .35s cubic-bezier(.2,.7,.3,1) both;
+  }
+  @keyframes rise { from { opacity:0; transform:translateY(10px); } }
+  .card h2 { margin:0 0 6px; font-size:clamp(17px,2.6vw,19px); letter-spacing:-.02em;
+             display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .hint { color:var(--muted); font-size:13.5px; margin:0 0 16px; line-height:1.6; }
+  .hint b { color:var(--text); }
 
-  input[type=text] { width:100%; border:1px solid var(--line); border-radius:12px;
-          padding:13px 14px; font-size:16px; margin-bottom:12px; background:#fff; color:var(--text); }
-  input[type=text]:focus { outline:2px solid var(--accent-soft); border-color:var(--accent); }
+  input[type=text], input[type=password] {
+    width:100%; border:1.5px solid var(--line2); border-radius:13px;
+    padding:13px 15px; font-size:15px; margin-bottom:12px;
+    background:var(--card); color:var(--text); outline:none;
+    transition:border-color .15s, box-shadow .15s;
+  }
+  input:focus { border-color:var(--accent);
+                box-shadow:0 0 0 4px color-mix(in srgb, var(--a1) 12%, transparent); }
+  input[type=file] { font-size:13px; margin-bottom:12px; color:var(--muted); max-width:100%; }
 
-  button { border:none; border-radius:12px; padding:13px 20px; font-size:15px;
-           font-weight:600; cursor:pointer; background:var(--accent); color:#fff; }
-  button:disabled { opacity:.5; cursor:not-allowed; }
-  button.big { width:100%; padding:16px; font-size:17px; }
-  button.ghost { background:var(--card); color:var(--text); border:1px solid var(--line); }
-  button.danger { background:#fee2e2; color:#b91c1c; }
+  button {
+    border:none; border-radius:13px; padding:13px 20px; font-size:14.5px;
+    font-weight:650; cursor:pointer; color:#fff; font-family:inherit;
+    background:linear-gradient(135deg,var(--a1),var(--a2));
+    transition:transform .15s, box-shadow .2s, filter .15s;
+    box-shadow:0 4px 14px -6px rgba(79,70,229,.45);
+  }
+  button:hover { transform:translateY(-1.5px); box-shadow:var(--shadow-lg); filter:brightness(1.05); }
+  button:active { transform:translateY(0) scale(.98); }
+  button.big { width:100%; padding:15px; font-size:16px; }
+  button.ghost { background:var(--card); color:var(--text);
+                 border:1.5px solid var(--line2); box-shadow:none; }
+  button.ghost:hover { border-color:var(--accent); color:var(--accent); box-shadow:none; }
+  button.danger { background:var(--red-soft); color:var(--red); box-shadow:none;
+                  border:1.5px solid transparent; }
+  button.danger:hover { border-color:var(--red); box-shadow:none; }
   .row { display:flex; gap:10px; flex-wrap:wrap; }
-  .row > * { flex:1; }
+  .row > * { flex:1; min-width:150px; }
 
-  /* --- Canlı feed kartları --- */
-  .event { border-radius:14px; padding:14px 16px; margin-bottom:10px;
-           background:var(--card); border:1px solid var(--line); font-size:15px;
-           line-height:1.55; }
-  .event .tag { font-size:11px; font-weight:700; letter-spacing:.6px;
-                text-transform:uppercase; display:block; margin-bottom:6px; }
-  .event.segment { color:var(--muted); font-size:14px; }
-  .event.segment .tag { color:#94a3b8; }
-  .event.question { background:var(--orange-soft); border-color:#fde68a; }
-  .event.question .tag { color:var(--orange); }
-  .event.answers { background:var(--green-soft); border-color:#bbf7d0; }
+  /* --- Canlı indikator --- */
+  .rec { display:inline-flex; align-items:center; gap:7px; font-size:12.5px;
+         font-weight:700; color:var(--red); letter-spacing:.04em; }
+  .rec i { width:9px; height:9px; border-radius:50%; background:var(--red);
+           animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); }
+                     50% { opacity:.35; transform:scale(.8); } }
+
+  /* --- Feed hadisələri --- */
+  #feed { display:flex; flex-direction:column; gap:11px; }
+  .event {
+    border-radius:15px; padding:14px 17px; font-size:14px; line-height:1.6;
+    background:var(--card); border:1px solid var(--line);
+    border-left-width:3.5px; box-shadow:var(--shadow);
+    animation:slidein .4s cubic-bezier(.2,.7,.3,1) both;
+  }
+  @keyframes slidein { from { opacity:0; transform:translateY(-8px); } }
+  .event .tag { font-size:10.5px; font-weight:800; letter-spacing:.08em;
+                text-transform:uppercase; display:flex; align-items:center; gap:6px;
+                margin-bottom:6px; color:var(--muted); }
+  .event.segment { color:var(--muted); font-size:13.5px; border-left-color:var(--line2); }
+  .event.question { border-left-color:var(--amber); background:var(--amber-soft);
+                    border-color:var(--amber-line); }
+  .event.question .tag { color:var(--amber); }
+  .event.answers { border-left-color:var(--green); background:var(--green-soft);
+                   border-color:var(--green-line); }
   .event.answers .tag { color:var(--green); }
-  .event.summary { background:var(--accent-soft); border-color:#bfdbfe; }
+  .event.summary { border-left-color:var(--accent); background:var(--accent-soft); }
   .event.summary .tag { color:var(--accent); }
-  .event.info { background:var(--purple-soft); border-color:#ddd6fe; color:var(--purple);
-                font-size:14px; }
-  .opt { background:#fff; border:1px solid var(--line); border-radius:10px;
-         padding:10px 12px; margin-top:8px; cursor:pointer; position:relative; }
-  .opt:hover { border-color:var(--green); }
-  .opt .tone { font-size:12px; font-weight:700; color:var(--green); margin-right:6px; }
-  .opt small { display:block; color:var(--muted); font-size:11px; margin-top:4px; }
-  .badge { background:var(--orange); color:#fff; font-size:11px; padding:2px 8px;
-           border-radius:99px; margin-left:6px; }
+  .event.info { border-left-color:var(--violet); background:var(--violet-soft);
+                color:var(--violet); font-size:13px; }
+  .badge { background:var(--amber); color:#fff; font-size:10px; font-weight:700;
+           padding:2.5px 9px; border-radius:99px; letter-spacing:.03em; }
+  .opt {
+    background:var(--card); border:1.5px solid var(--line); border-radius:12px;
+    padding:11px 14px; margin-top:9px; cursor:pointer; position:relative;
+    transition:border-color .15s, transform .15s, box-shadow .15s;
+  }
+  .opt:hover { border-color:var(--green); transform:translateX(3px);
+               box-shadow:0 4px 12px -6px rgba(5,150,105,.3); }
+  .opt.copied { border-color:var(--green); background:var(--green-soft); }
+  .opt .tone { font-size:11px; font-weight:800; color:var(--green);
+               text-transform:uppercase; letter-spacing:.05em; margin-right:7px; }
+  .opt small { display:block; color:var(--muted); font-size:11px; margin-top:5px; }
+  .opt::after { content:"⧉"; position:absolute; top:10px; right:12px;
+                color:var(--muted); font-size:13px; opacity:0; transition:opacity .15s; }
+  .opt:hover::after { opacity:.7; }
+  .opt.copied::after { content:"✓"; color:var(--green); opacity:1; }
+  .mono { font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:11.5px;
+          word-break:break-all; }
 
   /* --- Hesabat --- */
-  .report h3 { margin:18px 0 8px; font-size:14px; text-transform:uppercase;
-               letter-spacing:.6px; color:var(--muted); }
+  .report h2 { font-size:clamp(19px,3vw,22px); }
+  .report h3 { margin:20px 0 9px; font-size:11.5px; text-transform:uppercase;
+               letter-spacing:.1em; color:var(--accent); font-weight:800;
+               display:flex; align-items:center; gap:8px; }
+  .report h3::after { content:""; flex:1; height:1px; background:var(--line); }
   .report ul { margin:0; padding-left:20px; }
-  .report li { margin:5px 0; line-height:1.5; }
+  .report li { margin:6px 0; line-height:1.6; font-size:14px; }
   .pill { display:inline-block; background:var(--accent-soft); color:var(--accent);
-          border-radius:99px; padding:3px 10px; font-size:13px; margin:2px 4px 2px 0; }
+          border-radius:99px; padding:4px 12px; font-size:12.5px; font-weight:600;
+          margin:3px 5px 3px 0; }
 
-  /* --- Status sətri və toast --- */
-  #busy { display:none; align-items:center; gap:8px; color:var(--muted);
-          font-size:14px; margin-bottom:10px; }
-  .spin { width:16px; height:16px; border:2px solid var(--line);
-          border-top-color:var(--accent); border-radius:50%;
-          animation:spin .8s linear infinite; }
+  /* --- Status və toast --- */
+  #busy { display:none; align-items:center; gap:10px; color:var(--muted);
+          font-size:13.5px; margin-bottom:12px; padding:0 4px; }
+  .spin { width:17px; height:17px; border:2.5px solid var(--line2);
+          border-top-color:var(--accent); border-radius:50%; flex:none;
+          animation:spin .7s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
-  #toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
-           background:var(--text); color:#fff; padding:10px 18px; border-radius:99px;
-           font-size:14px; opacity:0; transition:opacity .3s; pointer-events:none; }
+  #toast {
+    position:fixed; bottom:26px; left:50%; z-index:50;
+    background:var(--text); color:var(--bg); padding:11px 22px; border-radius:99px;
+    font-size:13.5px; font-weight:600; opacity:0; pointer-events:none;
+    transform:translate(-50%, 14px);
+    transition:opacity .25s, transform .25s cubic-bezier(.2,.7,.3,1);
+    box-shadow:0 10px 30px -8px rgba(0,0,0,.35);
+  }
+  #toast.show { opacity:1; transform:translate(-50%, 0); }
 
-  /* --- Login pəncərəsi (yalnız AUTH_ENABLED=true olduqda görünür) --- */
-  #login { position:fixed; inset:0; background:rgba(15,23,42,.5); display:none;
-           align-items:center; justify-content:center; padding:16px; }
-  #login .card { max-width:360px; width:100%; }
+  /* --- Login pəncərəsi --- */
+  #login {
+    position:fixed; inset:0; z-index:40; display:none;
+    align-items:center; justify-content:center; padding:16px;
+    background:rgba(10,12,30,.45);
+    -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+  }
+  #login .card { max-width:380px; width:100%; box-shadow:0 24px 60px -12px rgba(0,0,0,.4); }
+
+  /* --- Hərəkət azaldılması istəyənlər üçün --- */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation:none !important; transition:none !important; }
+  }
+  /* --- Dar ekranlar --- */
+  @media (max-width:460px) {
+    .picker-wrap { width:100%; }
+    select { max-width:none; flex:1; }
+    .steps .lbl { font-size:10px; }
+  }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>🎙 AI Meeting Assistant</h1>
-  <span class="chip" id="mode">yüklənir...</span>
+  <div class="logo"><span class="dot">🎙</span> AI Meeting Assistant</div>
+  <span class="chip" id="mode">yüklənir…</span>
   <div class="spacer"></div>
-  <select id="picker" onchange="pickMeeting(this.value)">
-    <option value="">İclaslarım…</option>
-  </select>
+  <div class="picker-wrap">
+    <select id="picker" onchange="pickMeeting(this.value)">
+      <option value="">İclaslarım…</option>
+    </select>
+    <button class="iconbtn" id="delbtn" title="Seçilmiş iclası sil"
+            onclick="deleteMeeting()" hidden>🗑</button>
+  </div>
 </header>
 
 <div class="wrap">
 
-  <!-- Addım göstəricisi -->
+  <!-- Proqres stepper -->
   <ol class="steps">
-    <li id="s1"><b>1</b>Yarat</li>
-    <li id="s2"><b>2</b>Başlat</li>
-    <li id="s3"><b>3</b>Canlı iclas</li>
-    <li id="s4"><b>4</b>Hesabat</li>
+    <li id="s1"><div class="node">1</div><div class="lbl">Yarat</div></li>
+    <li id="s2"><div class="node">2</div><div class="lbl">Hazırla</div></li>
+    <li id="s3"><div class="node">3</div><div class="lbl">Canlı iclas</div></li>
+    <li id="s4"><div class="node">4</div><div class="lbl">Hesabat</div></li>
   </ol>
 
-  <!-- ADDIM 1: iclas yarat -->
+  <!-- ADDIM 1: yarat -->
   <section id="step1">
     <div class="card">
       <h2>Yeni iclas yaradın</h2>
-      <p class="hint">İclasın mövzusunu yazın — məsələn «Sprint planlaması».
-        Sistem iclas boyu sizin yerinizə qeyd aparacaq.</p>
+      <p class="hint">Mövzunu yazın — məsələn <b>«Sprint planlaması»</b>. Sistem iclas boyu
+        sizin yerinizə qeyd aparacaq, sualları tutacaq və cavab təklif edəcək.</p>
       <input type="text" id="topic" placeholder="İclasın mövzusu"
              onkeydown="if(event.key==='Enter')createMeeting()">
-      <button class="big" onclick="createMeeting()">➕ İclas yarat</button>
+      <button class="big" onclick="createMeeting()">İclas yarat →</button>
     </div>
   </section>
 
-  <!-- ADDIM 2: başlat -->
+  <!-- ADDIM 2: hazırla + başlat -->
   <section id="step2" hidden>
     <div class="card">
       <h2 id="m2topic"></h2>
-      <p class="hint">Hazır olanda düyməni basın. Bundan sonra iclasın səsi
-        (və ya yazdığınız mətn) canlı təhlil olunacaq: suallar aşkarlanacaq
-        və sizə cavab variantları təklif ediləcək.</p>
-      <button class="big" onclick="startMeeting()">▶ İclası başlat</button>
+      <p class="hint">Hazır olanda başladın. Bundan sonra iclasın səsi (Mac agenti avtomatik
+        qoşulur) və ya yazdığınız mətn canlı təhlil olunacaq.</p>
+      <button class="big" onclick="startMeeting()">▶&nbsp; İclası başlat</button>
     </div>
     <div class="card">
       <h2>📚 Bilik bazası <span class="chip">istəyə bağlı</span></h2>
-      <p class="hint">İclas mövzusu ilə bağlı sənədləri əvvəlcədən yükləyin —
-        AI suallara cavab verərkən bunlara əsaslanacaq (PDF və ya mətn faylı).</p>
-      <input type="file" id="docfile" accept=".pdf,.txt,.md"
-             style="margin-bottom:10px; font-size:14px;">
+      <p class="hint">Mövzu ilə bağlı sənədləri əvvəlcədən yükləyin — AI suallara cavab
+        verərkən bunlara əsaslanacaq (PDF və ya mətn faylı).</p>
+      <input type="file" id="docfile" accept=".pdf,.txt,.md">
       <div class="row">
-        <button class="ghost" onclick="uploadDoc()">⬆️ Faylı yüklə</button>
+        <button class="ghost" onclick="uploadDoc()">⬆ Faylı yüklə</button>
         <button class="ghost" onclick="testSearch()">🔍 Bazada yoxla</button>
       </div>
-      <p class="hint" id="docstatus" style="margin-top:10px"></p>
+      <p class="hint" id="docstatus" style="margin:12px 0 0"></p>
     </div>
   </section>
 
   <!-- ADDIM 3: canlı -->
   <section id="step3" hidden>
     <div class="card">
-      <h2 id="m3topic"></h2>
-      <p class="hint">İclas gedir. Audio göndərmək üçün Mac-də
-        <code>capture</code> skriptini işə salın, ya da aşağıya mətn yazın.
-        <b>Yaşıl kartlardakı cavab variantına klikləyin — mətni kopyalanır.</b></p>
+      <h2><span class="rec"><i></i>CANLI</span> <span id="m3topic"></span></h2>
+      <p class="hint">Mac agenti qurulubsa, səs <b>avtomatik</b> tutulur. Aşağıya mətn də
+        yaza bilərsiniz. <b>Yaşıl kartlardakı cavaba klikləyin — kopyalanır.</b></p>
       <input type="text" id="segtext" placeholder="İclasda deyilən cümləni yazın və Enter basın"
              onkeydown="if(event.key==='Enter'&&this.value.trim()){sendSegment(this.value);this.value='';}">
       <div class="row">
-        <button class="ghost" onclick="sendDemo()">🎲 Nümunə cümlə göndər (test)</button>
+        <button class="ghost" onclick="sendDemo()">🎲 Nümunə cümlə (test)</button>
         <button class="danger" id="endbtn" onclick="endMeeting()">⏹ İclası bitir</button>
       </div>
-      <p class="hint" style="margin-top:12px; margin-bottom:4px">
-        🎙 Capture agenti qurulubsa, Mac-iniz səsi <b>avtomatik</b> tutmağa başladı.
-        Agent yoxdursa, əl ilə başlatmaq üçün (klikləyin — kopyalansın):</p>
-      <div class="opt" onclick="copyAnswer(this)" id="capcmd" data-text=""
-           style="font-family:monospace; font-size:12px; word-break:break-all"></div>
+      <p class="hint" style="margin:14px 0 5px">Agent yoxdursa, əl ilə başlatmaq üçün
+        (klikləyin — kopyalansın):</p>
+      <div class="opt mono" onclick="copyAnswer(this)" id="capcmd" data-text=""></div>
     </div>
     <div id="busy"><div class="spin"></div><span id="busytext">AI təhlil edir…</span></div>
     <div id="feed"></div>
@@ -194,7 +338,7 @@
   <!-- ADDIM 4: hesabat -->
   <section id="step4" hidden>
     <div class="card report" id="report"></div>
-    <button class="big ghost" onclick="resetToNew()">➕ Yeni iclas yarat</button>
+    <button class="big ghost" onclick="resetToNew()">+ Yeni iclas yarat</button>
   </section>
 
 </div>
@@ -202,10 +346,11 @@
 <!-- Login (yalnız serverdə autentifikasiya aktivdirsə) -->
 <div id="login">
   <div class="card">
-    <h2>Giriş</h2>
-    <p class="hint">Serverdə autentifikasiya aktivdir — istifadəçi adı və şifrənizi yazın.</p>
-    <input type="text" id="lu" placeholder="İstifadəçi adı">
-    <input type="text" id="lp" placeholder="Şifrə" style="-webkit-text-security:disc">
+    <h2>Xoş gəlmisiniz 👋</h2>
+    <p class="hint">Davam etmək üçün istifadəçi adı və şifrənizi yazın.</p>
+    <input type="text" id="lu" placeholder="İstifadəçi adı" autocomplete="username">
+    <input type="password" id="lp" placeholder="Şifrə" autocomplete="current-password"
+           onkeydown="if(event.key==='Enter')doLogin()">
     <button class="big" onclick="doLogin()">Daxil ol</button>
   </div>
 </div>
@@ -248,15 +393,17 @@ async function doLogin() {
     localStorage.setItem('token', token);
     localStorage.setItem('username', $('lu').value);  // capture komandası üçün
     $('login').style.display = 'none';
-    toast('Daxil oldunuz ✅');
+    toast('Daxil oldunuz ✓');
     init();
   } catch (e) { /* xəta artıq toast-da göstərilib */ }
 }
 
+let toastTimer = null;
 function toast(msg) {
   $('toast').textContent = msg;
-  $('toast').style.opacity = 1;
-  setTimeout(() => $('toast').style.opacity = 0, 2200);
+  $('toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $('toast').classList.remove('show'), 2200);
 }
 
 function busy(on, text) {
@@ -281,7 +428,7 @@ function stepOf(m) {
   return 2;   // created | scheduled
 }
 
-/* --- İclas seçimi (yuxarıdakı siyahı) --- */
+/* --- İclas seçimi və silinməsi --- */
 async function refreshPicker() {
   const list = await api('/api/meetings');
   $('picker').innerHTML = '<option value="">İclaslarım…</option>' +
@@ -289,19 +436,40 @@ async function refreshPicker() {
       `<option value="${m.id}" ${meeting && m.id === meeting.id ? 'selected' : ''}>` +
       `${m.topic} (${{created:'hazır',scheduled:'planlanıb',live:'canlı',ended:'bitib'}[m.status]})</option>`
     ).join('');
+  $('delbtn').hidden = !meeting;
 }
 
 async function pickMeeting(id) {
-  if (!id) return;
+  if (!id) { $('delbtn').hidden = true; return; }
   meeting = await api('/api/meetings/' + id);
   lastId = 0;
   $('feed').innerHTML = '';
   $('m2topic').textContent = meeting.topic;
-  $('m3topic').textContent = '🔴 ' + meeting.topic;
+  $('m3topic').textContent = meeting.topic;
   setCapCmd();
   const step = stepOf(meeting);
   if (step === 4) await renderReport();
   showStep(step);
+  $('delbtn').hidden = false;
+}
+
+/* İki-klik təsdiqli silmə — native confirm() dialoqsuz */
+let delArmed = false;
+async function deleteMeeting() {
+  if (!meeting) return;
+  const btn = $('delbtn');
+  if (!delArmed) {
+    delArmed = true;
+    btn.classList.add('armed');
+    toast('Silmək üçün bir də klikləyin');
+    setTimeout(() => { delArmed = false; btn.classList.remove('armed'); }, 4000);
+    return;
+  }
+  delArmed = false;
+  btn.classList.remove('armed');
+  await api('/api/meetings/' + meeting.id, { method: 'DELETE' });
+  toast('İclas silindi 🗑');
+  resetToNew();
 }
 
 /* --- Addım 1: yarat --- */
@@ -321,12 +489,36 @@ async function createMeeting() {
 /* --- Addım 2: başlat --- */
 async function startMeeting() {
   meeting = await api(`/api/meetings/${meeting.id}/start`, { method: 'POST' });
-  $('m3topic').textContent = '🔴 ' + meeting.topic;
+  $('m3topic').textContent = meeting.topic;
   $('feed').innerHTML = '';
   lastId = 0;
   setCapCmd();
   await refreshPicker();
   showStep(3);
+}
+
+/* --- Bilik bazası --- */
+async function uploadDoc() {
+  const f = $('docfile').files[0];
+  if (!f) { toast('Əvvəlcə fayl seçin'); return; }
+  const fd = new FormData();          // Content-Type-ı brauzer özü qoyur
+  fd.append('file', f);
+  $('docstatus').textContent = '⏳ Yüklənir və indekslənir…';
+  try {
+    const r = await api('/api/ingest/file', { method: 'POST', body: fd });
+    $('docstatus').textContent =
+      `✓ «${r.title}» yükləndi — ${r.chunk_count} parça (${r.backend})`;
+    $('docfile').value = '';
+  } catch (e) { $('docstatus').textContent = '✗ Yükləmə alınmadı'; }
+}
+
+async function testSearch() {
+  // Sorğu kimi iclasın mövzusunu istifadə edirik — dialoqsuz, sadə yoxlama
+  const query = (meeting && meeting.topic) || 'layihə';
+  const hits = await api('/api/ingest/search?q=' + encodeURIComponent(query));
+  $('docstatus').textContent = hits.length
+    ? `🔍 «${query}» üçün ${hits.length} nəticə. Ən uyğunu: «${(hits[0].text || '').slice(0, 110)}…»`
+    : `🔍 «${query}» üçün nəticə yoxdur — əvvəlcə sənəd yükləyin.`;
 }
 
 /* --- Addım 3: canlı seqmentlər --- */
@@ -340,7 +532,7 @@ async function sendSegment(text) {
   } finally { busy(false); }
 }
 
-/* Nümunə cümlələr — sistemi açarsız sınamaq üçün */
+/* Nümunə cümlələr — sistemi sınamaq üçün */
 const demo = [
   'Salam, bu gün layihənin gedişatını müzakirə edirik.',
   'Samir, sizcə layihənin deadline-ı nə vaxta çatdırıla bilər?',
@@ -350,7 +542,7 @@ const demo = [
 let demoIdx = 0;
 function sendDemo() { sendSegment(demo[demoIdx++ % demo.length]); }
 
-/* --- Feed polling: 2 saniyədən bir yeni hadisələri çək --- */
+/* --- Feed polling: 2 saniyədən bir yeni hadisələr --- */
 function startPoll() {
   pollTimer = setInterval(async () => {
     if (!meeting) return;
@@ -375,11 +567,11 @@ function renderEvent(e) {
   if (e.type === 'segment')
     return `<div class="event segment"><span class="tag">Transkript #${p.seq}</span>${esc(p.text)}</div>`;
   if (e.type === 'question')
-    return `<div class="event question"><span class="tag">❓ Sual aşkarlandı` +
+    return `<div class="event question"><span class="tag">Sual aşkarlandı` +
       (p.directed_to_user ? '<span class="badge">sizə ünvanlanıb</span>' : '') +
       `</span><b>${esc(p.question)}</b></div>`;
   if (e.type === 'answer_options')
-    return `<div class="event answers"><span class="tag">💡 Cavab variantları — klikləyin, kopyalansın</span>` +
+    return `<div class="event answers"><span class="tag">Cavab variantları — klikləyin, kopyalansın</span>` +
       `<i>${esc(p.question)}</i>` +
       (p.options || []).map(o =>
         `<div class="opt" onclick="copyAnswer(this)" data-text="${esc(o.text)}">` +
@@ -387,38 +579,18 @@ function renderEvent(e) {
         (o.based_on_context ? '<small>📚 yüklənmiş sənədlərə əsaslanır</small>' : '') +
         `</div>`).join('') + `</div>`;
   if (e.type === 'quick_summary')
-    return `<div class="event summary"><span class="tag">📋 Sürətli xülasə</span>${esc(p.summary)}</div>`;
-  return `<div class="event info">ℹ️ ${esc(p.message || '')}</div>`;
+    return `<div class="event summary"><span class="tag">Sürətli xülasə</span>${esc(p.summary)}</div>`;
+  return `<div class="event info">${esc(p.message || '')}</div>`;
 }
 
 function copyAnswer(el) {
   navigator.clipboard.writeText(el.dataset.text)
-    .then(() => toast('Kopyalandı ✅'))
+    .then(() => {
+      el.classList.add('copied');
+      setTimeout(() => el.classList.remove('copied'), 1200);
+      toast('Kopyalandı ✓');
+    })
     .catch(() => toast('Kopyalama alınmadı'));
-}
-
-/* --- Bilik bazası (Addım 2) --- */
-async function uploadDoc() {
-  const f = $('docfile').files[0];
-  if (!f) { toast('Əvvəlcə fayl seçin'); return; }
-  const fd = new FormData();          // Content-Type-ı brauzer özü qoyur
-  fd.append('file', f);
-  $('docstatus').textContent = '⏳ Yüklənir və indekslənir…';
-  try {
-    const r = await api('/api/ingest/file', { method: 'POST', body: fd });
-    $('docstatus').textContent =
-      `✅ «${r.title}» yükləndi — ${r.chunk_count} parça (${r.backend})`;
-    $('docfile').value = '';
-  } catch (e) { $('docstatus').textContent = '❌ Yükləmə alınmadı'; }
-}
-
-async function testSearch() {
-  // Sorğu kimi iclasın mövzusunu istifadə edirik — dialoqsuz, sadə yoxlama
-  const query = (meeting && meeting.topic) || 'layihə';
-  const hits = await api('/api/ingest/search?q=' + encodeURIComponent(query));
-  $('docstatus').textContent = hits.length
-    ? `🔍 «${query}» üçün ${hits.length} nəticə. Ən uyğunu: «${(hits[0].text || '').slice(0, 110)}…»`
-    : `🔍 «${query}» üçün nəticə yoxdur — əvvəlcə sənəd yükləyin.`;
 }
 
 /* --- Canlı iclas üçün hazır capture komandası --- */
@@ -432,14 +604,13 @@ function setCapCmd() {
 }
 
 /* --- Addım 3 -> 4: bitir və hesabat --- */
-/* Native confirm() əvəzinə iki-klik təsdiqi: ilk klikdə düymə
-   "Əminsiniz?" olur, 4 saniyə ərzində ikinci klik iclası bitirir. */
+/* Native confirm() əvəzinə iki-klik təsdiqi */
 let endArmed = false;
 async function endMeeting() {
   const btn = $('endbtn');
   if (!endArmed) {
     endArmed = true;
-    btn.textContent = '⚠️ Əminsiniz? Bir də klikləyin';
+    btn.textContent = '⚠ Əminsiniz? Bir də klikləyin';
     setTimeout(() => { endArmed = false; btn.textContent = '⏹ İclası bitir'; }, 7000);
     return;
   }
@@ -460,7 +631,7 @@ async function renderReport() {
   const s = r.summary || {};
   $('report').innerHTML =
     `<h2>📄 ${esc(s.headline || r.topic)}</h2>` +
-    `<p class="hint">${esc(s.overview || '')}</p>` +
+    `<p class="hint" style="margin-top:6px">${esc(s.overview || '')}</p>` +
     `<h3>Əsas məqamlar</h3><ul>` +
       (s.key_points || []).map(k => `<li>${esc(k)}</li>`).join('') + `</ul>` +
     (s.decisions?.length ? `<h3>Qərarlar</h3><ul>` +
@@ -469,25 +640,26 @@ async function renderReport() {
       (r.action_items || []).map(a =>
         `<li>${esc(a.task)}${a.owner ? ' — <b>' + esc(a.owner) + '</b>' : ''}` +
         `${a.due ? ' <span class="pill">⏰ ' + esc(a.due) + '</span>' : ''}</li>`).join('') + `</ul>` +
-    (r.entities?.length ? `<h3>Xatırlanan şəxslər/anlayışlar</h3>` +
+    (r.entities?.length ? `<h3>Xatırlanan şəxslər / anlayışlar</h3>` +
       r.entities.map(en => `<span class="pill">${esc(en.name)}</span>`).join('') : '') +
-    (r.card_url ? `<h3>Xülasə kartı</h3><p class="hint">${esc(r.card_url)}</p>` : '') +
-    `<p class="hint" style="margin-top:14px">${r.delivered ? '✉️ Hesabat çatdırıldı' : ''}</p>`;
+    (r.card_url ? `<h3>Xülasə kartı</h3><p class="hint mono">${esc(r.card_url)}</p>` : '') +
+    (r.delivered ? `<p class="hint" style="margin-top:16px">✉️ Hesabat email və Telegram-a çatdırıldı</p>` : '');
 }
 
 function resetToNew() {
   meeting = null; lastId = 0;
   $('feed').innerHTML = '';
   $('picker').value = '';
+  $('delbtn').hidden = true;
   showStep(1);
 }
 
-/* --- Başlanğıc: rejimi göstər, iclasları yüklə, davam edən iclası bərpa et --- */
+/* --- Başlanğıc: rejimi göstər, davam edən iclası bərpa et --- */
 async function init() {
   try {
     const h = await fetch('/health').then(r => r.json());
     const isMock = h.providers.llm === 'mock';
-    $('mode').textContent = isMock ? '🧪 Demo rejimi (açar tələb etmir)' : '⚡ Canlı AI';
+    $('mode').textContent = isMock ? 'Demo rejimi' : '⚡ Canlı AI';
     $('mode').className = 'chip' + (isMock ? '' : ' live');
   } catch (e) { $('mode').textContent = 'server əlçatan deyil'; }
 

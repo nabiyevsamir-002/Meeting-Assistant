@@ -245,6 +245,18 @@
   }
   #login .card { max-width:380px; width:100%; box-shadow:0 24px 60px -12px rgba(0,0,0,.4); }
 
+  /* --- Sancaqlı "Son sual" paneli (canlı iclas) --- */
+  #hero { border:2px solid var(--amber-line); background:var(--amber-soft);
+          animation:heroIn .4s cubic-bezier(.2,.7,.3,1) both; }
+  @keyframes heroIn { from { opacity:0; transform:scale(.97); } }
+  #hero .htag { font-size:10.5px; font-weight:800; letter-spacing:.08em;
+                text-transform:uppercase; color:var(--amber);
+                display:flex; align-items:center; gap:7px; margin-bottom:8px; }
+  #hero .hq { font-size:clamp(16px,2.6vw,19px); font-weight:700;
+              line-height:1.45; letter-spacing:-.01em; margin-bottom:6px; }
+  #hero .wait { display:flex; align-items:center; gap:9px; color:var(--muted);
+                font-size:13px; margin-top:10px; }
+
   /* --- Dashboard: stat lövhələri --- */
   .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
            gap:12px; margin-bottom:16px; }
@@ -404,6 +416,13 @@
         (klikləyin — kopyalansın):</p>
       <div class="opt mono" onclick="copyAnswer(this)" id="capcmd" data-text=""></div>
     </div>
+    <!-- Sancaqlı panel: ən son sual və cavabları — heç vaxt axında itmir -->
+    <div class="card" id="hero" hidden>
+      <div class="htag">❓ Son sual</div>
+      <div class="hq" id="heroq"></div>
+      <div id="heroa"></div>
+    </div>
+
     <div id="busy"><div class="spin"></div><span id="busytext">AI təhlil edir…</span></div>
     <div id="feed"></div>
   </section>
@@ -571,6 +590,7 @@ async function startMeeting() {
   meeting = await api(`/api/meetings/${meeting.id}/start`, { method: 'POST' });
   $('m3topic').textContent = meeting.topic;
   $('feed').innerHTML = '';
+  $('hero').hidden = true; $('heroq').textContent = ''; $('heroa').innerHTML = '';
   lastId = 0;
   setCapCmd();
   await refreshPicker();
@@ -631,6 +651,7 @@ function startPoll() {
       for (const e of events) {
         lastId = Math.max(lastId, e.id);
         $('feed').insertAdjacentHTML('afterbegin', renderEvent(e));
+        updateHero(e);   // son sual + cavab sancaqlı paneldə böyük görünsün
       }
     } catch (err) { /* müvəqqəti şəbəkə xətası — növbəti dövrdə yenidən */ }
   }, 2000);
@@ -661,6 +682,26 @@ function renderEvent(e) {
   if (e.type === 'quick_summary')
     return `<div class="event summary"><span class="tag">Sürətli xülasə</span>${esc(p.summary)}</div>`;
   return `<div class="event info">${esc(p.message || '')}</div>`;
+}
+
+/* --- Sancaqlı panel: son sualı və cavablarını iri göstərir --- */
+function updateHero(e) {
+  const p = e.payload || {};
+  if (e.type === 'question') {
+    $('hero').hidden = false;
+    $('heroq').textContent = p.question;
+    // Cavab hazırlanana qədər gözləmə indikatoru
+    $('heroa').innerHTML =
+      '<div class="wait"><div class="spin"></div>Cavab variantları hazırlanır…</div>';
+  } else if (e.type === 'answer_options') {
+    $('hero').hidden = false;
+    if (!$('heroq').textContent) $('heroq').textContent = p.question;
+    $('heroa').innerHTML = (p.options || []).map(o =>
+      `<div class="opt" onclick="copyAnswer(this)" data-text="${esc(o.text)}">` +
+      `<span class="tone">${esc(o.tone)}</span>${esc(o.text)}` +
+      (o.based_on_context ? '<small>📚 yüklənmiş sənədlərə əsaslanır</small>' : '') +
+      `</div>`).join('');
+  }
 }
 
 function copyAnswer(el) {

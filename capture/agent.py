@@ -160,12 +160,20 @@ class CaptureAgent:
                 if self._stop_capture.is_set():
                     break
 
+                # Sükut yoxlaması: tam sakit parçaları STT-yə göndərmirik —
+                # həm ElevenLabs limitinə qənaət, həm boş seqment yaranmır
+                arr = np.asarray(frames)
+                rms = float(np.sqrt(np.mean(arr.astype("float64") ** 2)))
+                if rms < 60:
+                    log.info("Sükut (RMS=%d) — parça ötürüldü", int(rms))
+                    continue
+
                 buf = io.BytesIO()
                 with wave.open(buf, "wb") as w:
                     w.setnchannels(1)
                     w.setsampwidth(2)
                     w.setframerate(SAMPLE_RATE)
-                    w.writeframes(np.asarray(frames).tobytes())
+                    w.writeframes(arr.tobytes())
 
                 seq += 1
                 resp = self._request(

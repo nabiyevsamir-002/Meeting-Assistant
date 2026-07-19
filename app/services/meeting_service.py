@@ -74,6 +74,9 @@ def process_audio_chunk(meeting: Meeting, audio: bytes, filename: str) -> Transc
     stt = get_stt()
     result = stt.transcribe(audio, filename=filename, language=meeting.language)
     logger.info("STT (%s): %s", result.provider, result.text[:80])
+    # Sükut/boş nəticə — pipeline işə salınmır, boş seqment də saxlanmır
+    if not result.text.strip():
+        return TranscriptSegment(meeting_id=meeting.id, seq=0, text="")
     return process_text_segment(meeting, SegmentIn(text=result.text))
 
 

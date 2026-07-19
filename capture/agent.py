@@ -117,79 +117,123 @@ class CaptureAgent:
 
     # --- Səs tutma ---
 
-    def _find_device(self) -> Optional[int]:
-        """Giriş cihazını adına görə axtarır; tapılmasa None."""
+    def _find_devices(self) -> list:
+        """DEVICE konfiqurasiyasındakı (vergüllə ayrılmış) adlara uyğun cihazları tapır.
+
+        Məsələn DEVICE=blackhole,mikrofon → həm sistem səsi (Meet/Zoom),
+        həm də otaq mikrofonu paralel dinlənilir və qarışdırılır.
+        """
         import sounddevice as sd
 
-        for idx, dev in enumerate(sd.query_devices()):
-            if self.device_name.lower() in dev["name"].lower() and dev["max_input_channels"] > 0:
-                return idx
-        return None
+        found = []
+        names = [n.strip().lower() for n in self.device_name.split(",") if n.strip()]
+        devs = sd.query_devices()
+        for part in names:
+            for idx, dev in enumerate(devs):
+                if part in dev["name"].lower() and dev["max_input_channels"] > 0:
+                    found.append((idx, dev["name"]))
+                    break
+        return found
 
     def _capture_loop(self, meeting_id: str) -> None:
-        """Ayrıca thread-də: parça yaz -> göndər -> təkrar (stop olunana qədər)."""
+        """Ayrıca thread-də: bütün cihazlardan paralel oxu -> miksə -> göndər."""
         import numpy as np
         import sounddevice as sd
 
-        device = self._find_device()
-        if device is None:
-            # Cihaz yoxdursa (məs. BlackHole qurulmayıb) — xəbərdarlıq edib çıxırıq;
-            # əsas dövr 60 saniyədən bir yenidən cəhd edəcək
+        devices = self._find_devices()
+        if not devices:
             now = time.time()
             if now - self._device_warn_at > 60:
-                log.warning("«%s» giriş cihazı tapılmadı — BlackHole quraşdırılıbmı?",
-                            self.device_name)
+                log.warning("Heç bir giriş cihazı tapılmadı («%s»)", self.device_name)
                 self._device_warn_at = now
             self._capturing_meeting = None
             return
 
-        log.info("Səs tutma başladı: iclas=%s, cihaz #%d", meeting_id, device)
-        seq = 0
-        while not self._stop_capture.is_set():
+        # Hər cihaz üçün callback-lı stream — nümunələr buferlərə yığılır
+        buffers: dict = {idx: [] for idx, _ in devices}
+
+        def make_cb(idx):
+            def cb(indata, frames, t, status):  # noqa: ANN001 — sounddevice imzası
+                buffers[idx].append(indata.copy())
+            return cb
+
+        streams = []
+        for idx, name in devices:
             try:
-                frames = sd.rec(
-                    int(self.chunk_seconds * SAMPLE_RATE),
-                    samplerate=SAMPLE_RATE, channels=1, dtype="int16", device=device,
-                )
+                s = sd.InputStream(device=idx, channels=1, samplerate=SAMPLE_RATE,
+                                   dtype="int16", callback=make_cb(idx))
+                s.start()
+                streams.append(s)
+                log.info("Dinlənilir: #%d %s", idx, name)
+            except Exception as exc:  # noqa: BLE001 — bir cihaz açılmasa, digəri işləsin
+                log.warning("Cihaz #%d (%s) açılmadı: %s", idx, name, exc)
+
+        if not streams:
+            self._capturing_meeting = None
+            return
+
+        log.info("Səs tutma başladı: iclas=%s (%d cihaz)", meeting_id, len(streams))
+        seq = 0
+        try:
+            while not self._stop_capture.is_set():
                 # stop siqnalını gecikmədən tutmaq üçün kiçik addımlarla gözləyirik
                 waited = 0.0
                 while waited < self.chunk_seconds and not self._stop_capture.is_set():
                     time.sleep(0.25)
                     waited += 0.25
-                sd.stop()
                 if self._stop_capture.is_set():
                     break
 
-                # Sükut yoxlaması: tam sakit parçaları STT-yə göndərmirik —
-                # həm ElevenLabs limitinə qənaət, həm boş seqment yaranmır
-                arr = np.asarray(frames)
-                rms = float(np.sqrt(np.mean(arr.astype("float64") ** 2)))
-                if rms < 60:
-                    log.info("Sükut (RMS=%d) — parça ötürüldü", int(rms))
-                    continue
+                try:
+                    # Yığılan nümunələri götürüb cihazları bir kanala qarışdırırıq
+                    tracks = []
+                    for idx in list(buffers):
+                        chunks, buffers[idx] = buffers[idx], []
+                        if chunks:
+                            tracks.append(np.concatenate(chunks).astype(np.int32).flatten())
+                    if not tracks:
+                        continue
+                    n = min(t.shape[0] for t in tracks)
+                    mixed32 = np.zeros(n, dtype=np.int32)
+                    for t_ in tracks:
+                        mixed32 += t_[:n]
+                    mixed = np.clip(mixed32, -32768, 32767).astype(np.int16)
 
-                buf = io.BytesIO()
-                with wave.open(buf, "wb") as w:
-                    w.setnchannels(1)
-                    w.setsampwidth(2)
-                    w.setframerate(SAMPLE_RATE)
-                    w.writeframes(arr.tobytes())
+                    # Sükut yoxlaması: tam sakit parçalar STT-yə göndərilmir
+                    rms = float(np.sqrt(np.mean(mixed.astype("float64") ** 2)))
+                    if rms < 60:
+                        log.info("Sükut (RMS=%d) — parça ötürüldü", int(rms))
+                        continue
 
-                seq += 1
-                resp = self._request(
-                    "POST", f"/api/meetings/{meeting_id}/segments/audio",
-                    files={"file": (f"chunk{seq}.wav", buf.getvalue(), "audio/wav")},
-                )
-                if resp.status_code == 409:
-                    log.info("İclas artıq canlı deyil — tutma dayandırılır")
-                    break
-                resp.raise_for_status()
-                text = resp.json().get("text", "")
-                if text.strip():
-                    log.info("Transkript #%d: %s", seq, text[:80])
-            except Exception as exc:  # noqa: BLE001 — şəbəkə xətası dövrü öldürməsin
-                log.warning("Parça göndərilmədi (%s) — 5s sonra davam", exc)
-                time.sleep(5)
+                    buf = io.BytesIO()
+                    with wave.open(buf, "wb") as w:
+                        w.setnchannels(1)
+                        w.setsampwidth(2)
+                        w.setframerate(SAMPLE_RATE)
+                        w.writeframes(mixed.tobytes())
+
+                    seq += 1
+                    resp = self._request(
+                        "POST", f"/api/meetings/{meeting_id}/segments/audio",
+                        files={"file": (f"chunk{seq}.wav", buf.getvalue(), "audio/wav")},
+                    )
+                    if resp.status_code == 409:
+                        log.info("İclas artıq canlı deyil — tutma dayandırılır")
+                        break
+                    resp.raise_for_status()
+                    text = resp.json().get("text", "")
+                    if text.strip():
+                        log.info("Transkript #%d: %s", seq, text[:80])
+                except Exception as exc:  # noqa: BLE001 — şəbəkə xətası dövrü öldürməsin
+                    log.warning("Parça göndərilmədi (%s) — 5s sonra davam", exc)
+                    time.sleep(5)
+        finally:
+            for s in streams:
+                try:
+                    s.stop()
+                    s.close()
+                except Exception:  # noqa: BLE001
+                    pass
         log.info("Səs tutma bitdi: iclas=%s (%d parça)", meeting_id, seq)
         self._capturing_meeting = None
 

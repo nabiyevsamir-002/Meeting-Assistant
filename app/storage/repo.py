@@ -177,6 +177,21 @@ def get_report(meeting_id: str) -> Optional[MeetingReport]:
     )
 
 
+# --- Statistika (UI dashboard-u üçün) ---
+
+def get_stats() -> dict[str, int]:
+    """Ümumi göstəricilər: iclas, hesabat, sənəd və action item sayı."""
+    with get_conn() as c:
+        meetings = c.execute("SELECT COUNT(*) AS n FROM meetings").fetchone()["n"]
+        reports = c.execute("SELECT COUNT(*) AS n FROM reports").fetchone()["n"]
+        documents = c.execute("SELECT COUNT(*) AS n FROM documents").fetchone()["n"]
+        rows = c.execute("SELECT action_items FROM reports").fetchall()
+    # Action item-lər hesabatlarda JSON siyahı kimi saxlanır — sayını toplayırıq
+    actions = sum(len(json.loads(r["action_items"])) for r in rows)
+    return {"meetings": meetings, "reports": reports,
+            "documents": documents, "action_items": actions}
+
+
 # --- Uzunmüddətli yaddaş (mock mem0) ---
 
 def save_long_term(mem_id: str, meeting_id: Optional[str], kind: str,

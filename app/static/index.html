@@ -245,6 +245,50 @@
   }
   #login .card { max-width:380px; width:100%; box-shadow:0 24px 60px -12px rgba(0,0,0,.4); }
 
+  /* --- Dashboard: stat lövhələri --- */
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+           gap:12px; margin-bottom:16px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:15px;
+          padding:15px 17px; box-shadow:var(--shadow);
+          animation:rise .35s cubic-bezier(.2,.7,.3,1) both; }
+  .stat .v { font-size:26px; font-weight:650; letter-spacing:-.02em; line-height:1.1; }
+  .stat .l { font-size:11.5px; color:var(--muted); margin-top:4px; }
+
+  /* --- Son iclaslar siyahısı --- */
+  .mrow { display:flex; align-items:center; gap:12px; padding:12px 6px;
+          border-bottom:1px solid var(--line); cursor:pointer;
+          transition:transform .15s, background .15s; border-radius:10px; }
+  .mrow:last-child { border-bottom:none; }
+  .mrow:hover { transform:translateX(4px); background:var(--accent-soft); }
+  .mrow .t { flex:1; font-weight:600; font-size:14px; overflow:hidden;
+             text-overflow:ellipsis; white-space:nowrap; }
+  .mrow .d { font-size:12px; color:var(--muted); flex:none; }
+  .st { font-size:10.5px; font-weight:700; padding:3px 10px; border-radius:99px;
+        flex:none; letter-spacing:.03em; }
+  .st.live { background:var(--red-soft); color:var(--red); }
+  .st.ended { background:var(--green-soft); color:var(--green); }
+  .st.created, .st.scheduled { background:var(--accent-soft); color:var(--accent); }
+
+  /* --- "Necə işləyir" zolağı --- */
+  .how { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+         gap:12px; }
+  .how .h {
+    background:var(--card); border:1px solid var(--line); border-radius:15px;
+    padding:16px; box-shadow:var(--shadow); font-size:12.5px; color:var(--muted);
+    line-height:1.55; animation:rise .4s cubic-bezier(.2,.7,.3,1) both;
+  }
+  .how .h b { display:flex; align-items:center; gap:8px; color:var(--text);
+              font-size:13.5px; margin-bottom:6px; }
+  .how .n { width:22px; height:22px; border-radius:7px; flex:none; font-size:11px;
+            display:grid; place-items:center; color:#fff; font-weight:700;
+            background:linear-gradient(135deg,var(--a1),var(--a2)); }
+
+  /* --- Footer --- */
+  footer { text-align:center; color:var(--muted); font-size:12px;
+           padding:26px 16px 34px; line-height:1.8; }
+  footer a { color:var(--accent); text-decoration:none; font-weight:600; }
+  footer a:hover { text-decoration:underline; }
+
   /* --- Hərəkət azaldılması istəyənlər üçün --- */
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation:none !important; transition:none !important; }
@@ -291,6 +335,35 @@
       <input type="text" id="topic" placeholder="İclasın mövzusu"
              onkeydown="if(event.key==='Enter')createMeeting()">
       <button class="big" onclick="createMeeting()">İclas yarat →</button>
+    </div>
+
+    <!-- Statistika lövhələri -->
+    <div class="stats" id="stats"></div>
+
+    <!-- Son iclaslar -->
+    <div class="card" id="recentcard" hidden>
+      <h2>🗂 Son iclaslar</h2>
+      <div id="recent"></div>
+    </div>
+
+    <!-- Keçmiş iclaslarda axtarış (epizodik yaddaş) -->
+    <div class="card">
+      <h2>🧠 Keçmiş iclaslarda axtar</h2>
+      <p class="hint">Epizodik yaddaşda semantik axtarış — «deadline nə danışmışdıq?»,
+        «büdcə qərarı» kimi sorğular yazın.</p>
+      <input type="text" id="memq" placeholder="Sorğu yazın və Enter basın"
+             onkeydown="if(event.key==='Enter'&&this.value.trim())searchMemory(this.value)">
+      <div id="memresults"></div>
+    </div>
+
+    <!-- Necə işləyir -->
+    <div class="how">
+      <div class="h"><b><span class="n">1</span> İclasdan əvvəl</b>
+        Sənədləri yükləyirsiniz — AI bilik bazası qurur, təqvimdən iclasları özü hazırlayır.</div>
+      <div class="h"><b><span class="n">2</span> İclas zamanı</b>
+        Səs avtomatik tutulur, suallar aşkarlanır, sizə 3 tonda cavab variantı təklif olunur.</div>
+      <div class="h"><b><span class="n">3</span> İclasdan sonra</b>
+        Xülasə, qərarlar və növbəti addımlar hazırlanıb email və Telegram-a çatdırılır.</div>
     </div>
   </section>
 
@@ -342,6 +415,13 @@
   </section>
 
 </div>
+
+<footer>
+  AI Meeting Assistant — Month-4 Capstone · Samir Nəbiyev<br>
+  <a href="/docs" target="_blank">API sənədləri</a> ·
+  <a href="https://n8n.visualkey.az" target="_blank">n8n workflow-ları</a> ·
+  <a href="https://github.com/nebiyevsamir002-star/meeting-assistant" target="_blank">Mənbə kodu</a>
+</footer>
 
 <!-- Login (yalnız serverdə autentifikasiya aktivdirsə) -->
 <div id="login">
@@ -651,7 +731,54 @@ function resetToNew() {
   $('feed').innerHTML = '';
   $('picker').value = '';
   $('delbtn').hidden = true;
+  // Ana səhifəyə qayıdanda dashboard təzələnsin
+  api('/api/meetings').then(loadDashboard).catch(() => {});
   showStep(1);
+}
+
+/* --- Dashboard: statistika + son iclaslar --- */
+const STATUS_AZ = { created:'hazır', scheduled:'planlanıb', live:'canlı', ended:'bitib' };
+
+async function loadDashboard(list) {
+  // Stat lövhələri — rəqəmlər mətn rəngində (dizayn sistemi qaydası)
+  try {
+    const s = await api('/api/memory/stats');
+    $('stats').innerHTML = [
+      [s.meetings, 'İclas'],
+      [s.reports, 'Hazır hesabat'],
+      [s.action_items, 'Növbəti addım'],
+      [s.documents, 'Sənəd'],
+    ].map(([v, l]) => `<div class="stat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+  } catch (e) { $('stats').innerHTML = ''; }
+
+  // Son iclaslar (ən çoxu 6)
+  const recent = (list || []).slice(0, 6);
+  $('recentcard').hidden = recent.length === 0;
+  $('recent').innerHTML = recent.map(m =>
+    `<div class="mrow" onclick="pickMeeting('${m.id}')">
+       <span class="t">${esc(m.topic)}</span>
+       <span class="d">${(m.created_at || '').slice(0, 10)}</span>
+       <span class="st ${m.status}">${STATUS_AZ[m.status]}</span>
+     </div>`).join('');
+}
+
+/* --- Epizodik yaddaşda axtarış --- */
+async function searchMemory(q) {
+  $('memresults').innerHTML =
+    '<p class="hint" style="margin:10px 0 0">⏳ Axtarılır…</p>';
+  try {
+    const r = await api('/api/memory/search?q=' + encodeURIComponent(q));
+    const eps = r.episodes || [];
+    $('memresults').innerHTML = eps.length
+      ? eps.map(ep =>
+          `<div class="mrow" style="cursor:default">
+             <span class="t">${esc(ep.topic || '')}<br>
+               <span style="font-weight:400;color:var(--muted);font-size:12.5px;white-space:normal">
+                 ${esc((ep.text || '').slice(0, 150))}…</span></span>
+             <span class="d">${esc(ep.date || '')}</span>
+           </div>`).join('')
+      : '<p class="hint" style="margin:10px 0 0">Nəticə tapılmadı.</p>';
+  } catch (e) { $('memresults').innerHTML = ''; }
 }
 
 /* --- Başlanğıc: rejimi göstər, davam edən iclası bərpa et --- */
@@ -666,6 +793,7 @@ async function init() {
   try {
     const list = await api('/api/meetings');
     await refreshPicker();
+    loadDashboard(list);
     // Davam edən canlı iclas varsa, birbaşa ona qayıdırıq
     const live = list.find(m => m.status === 'live');
     if (live) { await pickMeeting(live.id); return; }

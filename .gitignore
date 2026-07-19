@@ -25,3 +25,6 @@ google_token.json
 # IDE
 .idea/
 .vscode/
+
+# Söhbət davamı faylı (giriş məlumatları var — repo-ya düşməsin)
+PROJECT_STATE.md

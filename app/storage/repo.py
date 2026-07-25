@@ -12,14 +12,15 @@ def save_meeting(m: Meeting) -> None:
     """İclası yazır və ya yeniləyir (UPSERT)."""
     with get_conn() as c:
         c.execute(
-            """INSERT INTO meetings (id, topic, status, language, source,
+            """INSERT INTO meetings (id, topic, status, language, source, user_name,
                                      scheduled_at, started_at, ended_at, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?)
+               VALUES (?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(id) DO UPDATE SET
                  topic=excluded.topic, status=excluded.status,
+                 user_name=excluded.user_name,
                  scheduled_at=excluded.scheduled_at,
                  started_at=excluded.started_at, ended_at=excluded.ended_at""",
-            (m.id, m.topic, m.status, m.language, m.source,
+            (m.id, m.topic, m.status, m.language, m.source, m.user_name,
              m.scheduled_at, m.started_at, m.ended_at, m.created_at),
         )
 
@@ -45,6 +46,24 @@ def delete_meeting(meeting_id: str) -> None:
         c.execute("DELETE FROM segments WHERE meeting_id=?", (meeting_id,))
         c.execute("DELETE FROM feed_events WHERE meeting_id=?", (meeting_id,))
         c.execute("DELETE FROM reports WHERE meeting_id=?", (meeting_id,))
+
+
+def end_stale_live_meetings() -> int:
+    """Server yenidən başlayanda 'canlı' qalmış iclasları bitmiş sayır.
+
+    Canlı iclasın vəziyyəti (yaddaş/agent) yalnız prosesin içindədir; proses
+    yenidən başlayanda o itir. Belə 'zombi' iclaslar panel/agent-i çaşdırmasın
+    deyə onları 'ended' işarələyirik (hesabatsız — natamam ola bilər).
+    """
+    from app.models.core import utcnow_iso
+
+    with get_conn() as c:
+        cur = c.execute(
+            "UPDATE meetings SET status='ended', ended_at=? "
+            "WHERE status='live'",
+            (utcnow_iso(),),
+        )
+        return cur.rowcount
 
 
 def find_meeting_by_topic(topic: str) -> Optional[Meeting]:

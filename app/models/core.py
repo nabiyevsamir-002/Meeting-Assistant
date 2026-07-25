@@ -29,6 +29,10 @@ class MeetingCreate(BaseModel):
     topic: str = Field(..., description="İclasın mövzusu")
     language: str = Field(default="az", description="İclasın dili")
     scheduled_at: Optional[str] = Field(default=None, description="Planlaşdırılmış vaxt (ISO)")
+    user_name: Optional[str] = Field(
+        default=None,
+        description="Bu iclasda köməkçinin təmsil etdiyi şəxs — ona ünvanlanan suallar süzülür",
+    )
 
 
 class Meeting(BaseModel):
@@ -37,7 +41,8 @@ class Meeting(BaseModel):
     topic: str
     status: MeetingStatus = "created"
     language: str = "az"
-    source: str = "manual"                      # manual | calendar
+    source: str = "manual"                      # manual
+    user_name: Optional[str] = None             # boşdursa, settings.user_name işlədilir
     scheduled_at: Optional[str] = None
     started_at: Optional[str] = None
     ended_at: Optional[str] = None
@@ -65,7 +70,7 @@ class TranscriptSegment(BaseModel):
 
 # --- Canlı feed hadisəsi ---
 
-FeedEventType = Literal["segment", "question", "answer_options", "quick_summary", "info"]
+FeedEventType = Literal["segment", "question", "answer_options", "answer", "quick_summary", "info"]
 
 
 class FeedEvent(BaseModel):
@@ -104,18 +109,6 @@ class TranscriptionResult(BaseModel):
     language: Optional[str] = None
     duration: float = 0.0
     provider: str = "mock"
-
-
-# --- Təqvim hadisəsi ---
-
-class CalendarEvent(BaseModel):
-    """Google Calendar (və ya mock) hadisəsi."""
-    id: str
-    title: str
-    start: str
-    end: Optional[str] = None
-    description: Optional[str] = None
-    meet_link: Optional[str] = None
 
 
 # --- Yekun hesabat ---

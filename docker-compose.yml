@@ -39,6 +39,9 @@ services:
       # FastAPI-yə konteyner şəbəkəsi üzərindən çıxış
       - API_BASE_URL=http://app:8000
       - N8N_SECURE_COOKIE=false
+      # Qeyd: n8n 2.x-də owner hesabı məcburidir (N8N_USER_MANAGEMENT_DISABLED
+      # 1.0-dan sonra silinib) — localhost:5678 açılıb bir dəfə lokal owner
+      # forması doldurulmalıdır (dummy email/şifrə kifayətdir).
       # n8n 2.x node-larda $env istifadəsini defolt bloklayır — workflow-larımız
       # üçün açırıq (yalnız aşağıdakı zərərsiz dəyişənlər ötürülür)
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false

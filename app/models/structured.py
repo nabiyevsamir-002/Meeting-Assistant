@@ -84,6 +84,19 @@ class EntityList(BaseModel):
     entities: list[Entity] = Field(default_factory=list)
 
 
+# --- Öncədən hazırlanmış Q&A (J — PDF yüklənəndə) ---
+
+class PreparedQA(BaseModel):
+    """Sənəddən öncədən hazırlanmış bir sual/cavab cütü."""
+    question: str = Field(..., description="Ehtimal olunan sual")
+    answer: str = Field(..., description="Sənədə əsaslanan hazır cavab")
+
+
+class PreparedQAList(BaseModel):
+    """Bir sənəddən hazırlanmış bütün Q&A cütləri."""
+    items: list[PreparedQA] = Field(default_factory=list)
+
+
 # --- Sürətli xülasə (iclas zamanı) ---
 
 class QuickSummary(BaseModel):

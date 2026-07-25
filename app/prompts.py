@@ -1,79 +1,76 @@
-"""Bütün LLM prompt şablonları bir yerdə.
+"""All LLM prompt templates in one place.
 
-Şablonlarda <mətn>, <sual>, <kontekst>, <transkript> kimi taqlar istifadə olunur —
-bu, həm real LLM üçün aydın struktur verir, həm də mock provayderin
-prompt-dan lazımi hissəni qaydalarla çıxarmasına imkan yaradır.
+Instructions are in English (fewer input tokens, marginally faster) but the
+prompts ask for AZERBAIJANI output wherever new text is generated. Tags like
+<text>, <question>, <context>, <transcript> give the model clear structure and
+also let the mock provider extract the relevant part by rule.
 """
 
-# İclas zamanı sual aşkarlama
-DETECT_QUESTIONS = """Sən iclas köməkçisisən. Aşağıdakı transkript parçasını oxu və
-orada verilən SUALLARI aşkarla. Xüsusilə istifadəçiyə ("{user_name}") ünvanlanan
-sualları qeyd et. Ritorik sualları buraxma.
-
-<mətn>
+# Question detection during the meeting
+DETECT_QUESTIONS = """Find the QUESTIONS in this transcript chunk, especially any addressed to the user ("{user_name}"). Skip rhetorical questions.
+<text>
 {text}
-</mətn>
+</text>
+For each question: the question text, whether it is addressed to the user, urgency, confidence."""
 
-Hər sual üçün: sualın mətni, istifadəçiyə ünvanlanıb-ünvanlanmadığı, təcililik və əminlik."""
-
-# Cavab variantlarının strukturlaşdırılması (agent nəticəsindən sonra)
-STRUCTURE_ANSWERS = """Aşağıdakı suala verilmiş cavab qaralamasını 2-3 səlis cavab
-variantına çevir. Hər variant fərqli tonda olsun: qısa, ətraflı, diplomatik.
-Kontekstə əsaslanan variantları qeyd et.
-
-<sual>
+# Structure answer options (after the agent result)
+STRUCTURE_ANSWERS = """Give 3 fluent answer options to the question, each in a different tone: short, detailed, diplomatic. Mark the ones grounded in the context. Write the answers in Azerbaijani.
+<question>
 {question}
-</sual>
-
-<kontekst>
+</question>
+<context>
 {context}
-</kontekst>
-
-<qaralama>
+</context>
+<draft>
 {draft}
-</qaralama>"""
+</draft>"""
 
-# Sürətli canlı xülasə (iclas zamanı, hər N seqmentdən bir)
-QUICK_SUMMARY = """İclas davam edir. Son transkript pəncərəsinə əsasən söhbətin
-cari vəziyyətini 2-3 cümlə ilə xülasə et — istifadəçi diqqətini itiribsə,
-bu xülasə onu sürətlə kontekstə qaytarmalıdır.
+# Live streaming single answer — the user can say it directly.
+# Grounding guard (D): use ONLY the context; if it does not cover the question,
+# say briefly it is not in the documents instead of inventing facts.
+ANSWER_STREAM = """Write a SHORT, natural, ready-to-say answer (2-3 sentences) to the question addressed to you, as if YOU are answering. Use ONLY the context to ground your answer; if the context does NOT contain the answer, briefly say it is not in the documents instead of inventing facts. No filler. Write in Azerbaijani.
+<question>
+{question}
+</question>
+<context>
+{context}
+</context>"""
 
-<mətn>
-{window}
-</mətn>
-
-Əvvəlki ümumi xülasə:
-<xülasə>
-{running_summary}
-</xülasə>"""
-
-# Yekun iclas xülasəsi (iclasdan sonra)
-FINAL_SUMMARY = """İclas bitdi. Tam transkriptə əsasən strukturlaşdırılmış yekun
-xülasə hazırla: başlıq, icmal, əsas məqamlar, qərarlar, açıq suallar.
-İclasın mövzusu: {topic}
-
-<transkript>
-{transcript}
-</transkript>"""
-
-# Action item-lərin çıxarılması (iclasdan sonra)
-EXTRACT_ACTIONS = """Aşağıdakı iclas transkriptindən KONKRET növbəti addımları
-(action item) çıxar. Hər addım üçün: iş, məsul şəxs (deyilibsə), son tarix
-(deyilibsə) və prioritet.
-
-<transkript>
-{transcript}
-</transkript>"""
-
-# Entity (varlıq) çıxarılması — entity yaddaşı üçün
-EXTRACT_ENTITIES = """Aşağıdakı transkript parçasından vacib varlıqları çıxar:
-şəxslər, layihələr, tarixlər, təşkilatlar. Hər biri üçün qısa qeyd yaz.
-
-<mətn>
+# Pre-generated anticipated Q&A from an uploaded document (J).
+# Runs at UPLOAD time (off the live critical path), so latency here is free.
+GENERATE_QA = """From the document below, generate up to {count} likely questions a meeting participant might ask about it, each with a concise, ready-to-say answer grounded ONLY in the document. Write both questions and answers in Azerbaijani.
+<text>
 {text}
-</mətn>"""
+</text>"""
 
-# ReAct agentin sistem təlimatı
-AGENT_SYSTEM = """Sən canlı iclas zamanı istifadəçiyə kömək edən köməkçisən.
-İclasda verilmiş suala istifadəçinin adından cavab vermək üçün 2-3 variant hazırla.
-Cavab hazırlamazdan əvvəl bilik bazasında (yüklənmiş sənədlərdə) axtarış apar."""
+# Quick live summary (during the meeting, every N segments)
+QUICK_SUMMARY = """The meeting is ongoing. Based on the recent transcript window, summarize the current state of the conversation in 2-3 sentences so a user who lost focus can catch up. Write in Azerbaijani.
+<text>
+{window}
+</text>
+Previous running summary:
+<summary>
+{running_summary}
+</summary>"""
+
+# Final meeting summary (after the meeting)
+FINAL_SUMMARY = """The meeting ended. From the full transcript, produce a structured final summary: headline, overview, key points, decisions, open questions. Write in Azerbaijani.
+Meeting topic: {topic}
+<transcript>
+{transcript}
+</transcript>"""
+
+# Action item extraction (after the meeting)
+EXTRACT_ACTIONS = """From the meeting transcript below, extract CONCRETE next steps (action items). For each: task, owner (if stated), due date (if stated), priority. Write in Azerbaijani.
+<transcript>
+{transcript}
+</transcript>"""
+
+# Entity extraction — for entity memory
+EXTRACT_ENTITIES = """From the transcript chunk below, extract important entities: people, projects, dates, organizations. Write a short note for each in Azerbaijani.
+<text>
+{text}
+</text>"""
+
+# ReAct agent system instruction
+AGENT_SYSTEM = """You help the user during a live meeting. For a question asked in the meeting, prepare 2-3 answer options on the user's behalf. Before answering, search the knowledge base (uploaded documents). Write answers in Azerbaijani."""

@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     log_level: str = "INFO"
+    # İstifadəçinin adı — sual aşkarlamada "bu sual bu şəxsə ünvanlanıb?" üçün
+    # istifadə olunur (Chrome extension panelinin filtri də buna əsaslanır).
+    user_name: str = "Samir"
 
     # --- Autentifikasiya (JWT) ---
     auth_enabled: bool = False
@@ -41,9 +44,19 @@ class Settings(BaseSettings):
     # --- LLM provayderi: mock | claude | openai ---
     llm_provider: str = "mock"
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-5"
+    # SÜRƏT: canlı iclas üçün ən sürətli Claude modeli (Haiku). Daha güclü,
+    # amma daha yavaş cavab üçün ANTHROPIC_MODEL=claude-sonnet-5 verin.
+    anthropic_model: str = "claude-haiku-4-5-20251001"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+
+    # --- LangSmith (LangChain izləmə/observability) ---
+    # LANGSMITH_TRACING=true + açar verildikdə LangChain (ReAct agent, yaddaş)
+    # avtomatik izlənir — hər addım smith.langchain.com-da görünür.
+    langsmith_tracing: bool = False
+    langsmith_api_key: str = ""
+    langsmith_project: str = "meeting-assistant"
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
 
     # --- STT provayderi: mock | elevenlabs | whisper ---
     stt_provider: str = "mock"
@@ -72,12 +85,6 @@ class Settings(BaseSettings):
     # --- Uzunmüddətli yaddaş: mock | mem0 ---
     longterm_provider: str = "mock"
 
-    # --- Google Calendar (OAuth 2.0): mock | google ---
-    calendar_provider: str = "mock"
-    google_client_id: str = ""
-    google_client_secret: str = ""
-    google_redirect_uri: str = "http://localhost:8000/api/auth/google/callback"
-
     # --- Xülasə kartı: mock | hcti ---
     card_provider: str = "mock"
     hcti_user_id: str = ""
@@ -91,18 +98,39 @@ class Settings(BaseSettings):
     sqlite_path: str = "data/app.db"
     data_dir: str = "data"
 
-    # --- Planlayıcı ---
-    scheduler_enabled: bool = True
-    calendar_poll_minutes: int = 5
-    calendar_lookahead_minutes: int = 30
-
     # --- Pipeline parametrləri ---
-    quick_summary_every: int = 3       # neçə seqmentdən bir sürətli xülasə
+    quick_summary_every: int = 5       # neçə seqmentdən bir sürətli xülasə
+                                       # (xülasə 2 LLM çağırışıdır — qısa parçalarla
+                                       # 3 çox tez-tez idi, 5 ≈ hər 35 saniyə)
     agent_max_iterations: int = 4      # ReAct agentin maksimum addım sayı
+    # Canlı iclasda SÜRƏT üçün: ReAct agentin çox addımlı dövrünü atlayıb
+    # birbaşa (axtarış + tək strukturlaşdırma çağırışı) cavab verir.
+    # False → tam ReAct agent yolu (kurs nümayişi üçün, amma daha yavaş).
+    live_fast_answers: bool = True
+    # Yalnız istifadəçiyə ünvanlanan suallara cavab hazırla.
+    # False (default) → BÜTÜN suallar cavablanır: real iclasda sual sizə aid
+    # olsa da adınız həmişə çəkilmir ("Sən nə düşünürsən?"), ona görə bütün
+    # sualları göstərmək daha etibarlıdır. Panel adınız keçənləri vurğulayır.
+    answer_only_directed: bool = False
     chunk_size: int = 800              # sənəd parçalama ölçüsü (simvol)
     chunk_overlap: int = 150           # parçalar arası üst-üstə düşmə
     search_top_k: int = 4              # kontekst axtarışında nəticə sayı
     language: str = "az"
+
+    # --- Sürət/dəqiqlik optimizasiyaları (A, C, D, E, J) ---
+    # A: LLM sual aşkarlamadan ƏVVƏL lokal ön-filtr. Seqmentdə sual əlaməti
+    # ("?", sual sözü, istifadəçi adı) yoxdursa LLM çağırışı TAM atlanır —
+    # seqmentlərin çoxu adi cümlədir, beləliklə LLM yükü azalır, gecikmə düşür.
+    local_prefilter: bool = True
+    # C: eyni sual son N saniyədə cavablanıbsa təkrar aşkarlanıб-cavablanmır
+    # (chunk sərhədləri üst-üstə düşəndə yaranan dublikatların qarşısını alır).
+    answer_dedup_seconds: int = 60
+    # J: PDF yüklənəndə arxa planda ehtimal olunan sual/cavab cütləri hazırlanır;
+    # canlı sual onlardan biri ilə yüksək oxşarlıqla uyğun gəlirsə hazır cavab
+    # DƏRHAL verilir (0 LLM çağırışı). Uyğunluq zəifdirsə adi RAG yoluna düşür.
+    prepared_qa_enabled: bool = True
+    prepared_qa_count: int = 12          # neçə ehtimal Q&A hazırlansın
+    prepared_qa_threshold: float = 0.86  # uyğunluq həddi (konservativ = təhlükəsiz)
 
     def data_path(self, *parts: str) -> Path:
         """data/ qovluğu altında yol qurur və qovluğun mövcudluğunu təmin edir."""

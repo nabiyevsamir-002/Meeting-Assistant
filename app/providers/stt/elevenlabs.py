@@ -22,6 +22,9 @@ class ElevenLabsSTTProvider(BaseSTTProvider):
     def __init__(self, api_key: str, model_id: str = "scribe_v1") -> None:
         self._api_key = api_key
         self._model_id = model_id
+        # SÜRƏT: davamlı bağlantı — hər parçada yeni TLS əl-sıxma olmasın
+        # (elevenlabs.io-ya hər çağırışda ~200-400ms qənaət)
+        self._client = httpx.Client(timeout=120, headers={"xi-api-key": api_key})
 
     def transcribe(
         self,
@@ -29,17 +32,16 @@ class ElevenLabsSTTProvider(BaseSTTProvider):
         *,
         filename: str = "chunk.wav",
         language: Optional[str] = None,
+        user_name: Optional[str] = None,  # yalnız mock işlədir
     ) -> TranscriptionResult:
         data: dict = {"model_id": self._model_id}
         if language:
             # ISO kod veriləndə dil aşkarlamaya vaxt sərf olunmur
             data["language_code"] = language
-        resp = httpx.post(
+        resp = self._client.post(
             _API_URL,
-            headers={"xi-api-key": self._api_key},
             data=data,
             files={"file": (filename, audio)},
-            timeout=120,
         )
         resp.raise_for_status()
         payload = resp.json()

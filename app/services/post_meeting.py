@@ -125,17 +125,39 @@ def node_deliver(state: PipelineState) -> PipelineState:
 
 # --- Pipeline-ın qurulması və icrası ---
 
+def _set_stage(meeting_id: Optional[str], stage: str, **fields) -> None:
+    """Frontend stepper-i üçün pipeline mərhələsini yazır (xəta-təhlükəsiz)."""
+    if not meeting_id:
+        return
+    try:
+        from app.services import pipeline_status
+        pipeline_status.set(meeting_id, stage=stage, **fields)
+    except Exception:  # noqa: BLE001 — status yazısı pipeline-ı pozmasın
+        pass
+
+
+def _staged(fn, stage: str):
+    """Qovşağı icra edir və bitəndən sonra mərhələni status-a yazır."""
+    def wrapped(state: PipelineState) -> PipelineState:
+        result = fn(state)
+        _set_stage(state.get("meeting_id"), stage)
+        return result
+    wrapped.__name__ = getattr(fn, "__name__", "node")
+    return wrapped
+
+
 def _run_with_langgraph(state: PipelineState) -> PipelineState:
     """LangGraph StateGraph + MemorySaver checkpointer ilə icra."""
     from langgraph.checkpoint.memory import MemorySaver
     from langgraph.graph import END, StateGraph
 
     graph = StateGraph(PipelineState)
-    graph.add_node("assemble", node_assemble)
-    graph.add_node("summarize", node_summarize)
-    graph.add_node("actions", node_actions)
-    graph.add_node("memorize", node_memorize)
-    graph.add_node("card", node_card)
+    # Hər qovşaq bitəndə mərhələ status-a yazılır (deliver → yekun "done" tutur)
+    graph.add_node("assemble", _staged(node_assemble, "assembled"))
+    graph.add_node("summarize", _staged(node_summarize, "summarized"))
+    graph.add_node("actions", _staged(node_actions, "actions"))
+    graph.add_node("memorize", _staged(node_memorize, "memorized"))
+    graph.add_node("card", _staged(node_card, "card"))
     graph.add_node("deliver", node_deliver)
 
     # Xətti axın: hər qovşaq növbətiyə keçir
@@ -155,8 +177,9 @@ def _run_with_langgraph(state: PipelineState) -> PipelineState:
 
 def _run_sequential(state: PipelineState) -> PipelineState:
     """LangGraph olmayanda eyni qovşaqlar sadə ardıcıllıqla işləyir."""
-    for node in (node_assemble, node_summarize, node_actions,
-                 node_memorize, node_card, node_deliver):
+    for node in (_staged(node_assemble, "assembled"), _staged(node_summarize, "summarized"),
+                 _staged(node_actions, "actions"), _staged(node_memorize, "memorized"),
+                 _staged(node_card, "card"), node_deliver):
         state.update(node(state))
     return state
 
@@ -166,33 +189,46 @@ def run_post_meeting_pipeline(meeting: Meeting) -> MeetingReport:
     state: PipelineState = {"meeting_id": meeting.id, "topic": meeting.topic}
 
     try:
-        state = _run_with_langgraph(state)
-    except ImportError:
-        logger.warning("LangGraph tapılmadı — ardıcıl fallback işlədilir")
-        state = _run_sequential(state)
+        try:
+            state = _run_with_langgraph(state)
+        except ImportError:
+            logger.warning("LangGraph tapılmadı — ardıcıl fallback işlədilir")
+            state = _run_sequential(state)
 
-    # Entity yaddaşından toplananları hesabata əlavə et
-    from app.services.meeting_service import get_memory
+        # Entity yaddaşından toplananları hesabata əlavə et
+        from app.services.meeting_service import get_memory
 
-    mem = get_memory(meeting.id)
-    entities = mem.entities.as_dicts() if mem else []
+        mem = get_memory(meeting.id)
+        if mem:
+            # Canlı axında təxirə salınmış varlıq çıxarılmasını indi toplu emal edirik
+            mem.entities.flush()
+        entities = mem.entities.as_dicts() if mem else []
 
-    report = MeetingReport(
-        meeting_id=meeting.id,
-        topic=meeting.topic,
-        transcript=state.get("transcript", ""),
-        summary=state.get("summary", {}),
-        action_items=state.get("action_items", []),
-        entities=entities,
-        card_url=state.get("card_url"),
-        delivered=state.get("delivered", False),
-        delivery_info=state.get("delivery_info"),
-    )
-    repo.save_report(report)
-    repo.add_feed_event(meeting.id, "info", {"message": "Hesabat hazırdır",
-                                             "card_url": report.card_url})
-    logger.info("Hesabat hazırlandı: %s", meeting.id)
-    return report
+        report = MeetingReport(
+            meeting_id=meeting.id,
+            topic=meeting.topic,
+            transcript=state.get("transcript", ""),
+            summary=state.get("summary", {}),
+            action_items=state.get("action_items", []),
+            entities=entities,
+            card_url=state.get("card_url"),
+            delivered=state.get("delivered", False),
+            delivery_info=state.get("delivery_info"),
+        )
+        repo.save_report(report)
+        repo.add_feed_event(meeting.id, "info", {"message": "Hesabat hazırdır",
+                                                 "card_url": report.card_url})
+        logger.info("Hesabat hazırlandı: %s", meeting.id)
+        _set_stage(meeting.id, "done", delivered=bool(report.delivered))
+        return report
+    except Exception:
+        # Mərhələni itirməmək üçün stage-i saxlayırıq, yalnız error bayrağı qoyuruq
+        try:
+            from app.services import pipeline_status
+            pipeline_status.set(meeting.id, error=True, done=True)
+        except Exception:  # noqa: BLE001
+            pass
+        raise
 
 
 def synthesize_summary_audio(meeting_id: str) -> Optional[str]:

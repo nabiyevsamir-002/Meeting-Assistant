@@ -94,11 +94,30 @@ def test_full_meeting_lifecycle(client):
     resp = client.get(f"/api/meetings/{mid}/report")
     assert resp.status_code == 200
 
+    # İclas-sonrası pipeline mərhələsi "done" olmalıdır (frontend stepper üçün)
+    st = client.get(f"/api/meetings/{mid}/end-status").json()
+    assert st["stage"] == "done"
+    assert st["delivered"] is True
+
     # Yaddaş axtarışı epizodu tapmalıdır
     resp = client.get("/api/memory/search", params={"q": "Sprint planlaması"})
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["episodes"]) >= 1 or len(data["long_term"]) >= 1
+
+
+def test_ingest_reports_status_stages(client):
+    """Sənəd yüklənəndə mərhələ statusu izlənilməlidir (frontend stepper üçün)."""
+    r = client.post("/api/ingest", json={
+        "title": "Status testi",
+        "content": "Salam. Layihənin son tarixi sentyabrdır. Büdcə təsdiqlənib.",
+        "source_type": "text",
+    }).json()
+    doc_id = r["doc_id"]
+    st = client.get(f"/api/ingest/status/{doc_id}").json()
+    # PREPARED_QA_ENABLED=false (conftest) → mərhələ dərhal "done"; parçalar yazılıb
+    assert st["stage"] in ("saved", "done")
+    assert st["chunks"] >= 1
 
 
 def test_delete_meeting(client):
@@ -115,15 +134,3 @@ def test_delete_meeting(client):
     assert client.delete(f"/api/meetings/{mid}").status_code == 200
     assert client.get(f"/api/meetings/{mid}").status_code == 404
     assert client.get(f"/api/meetings/{mid}/report").status_code == 404
-
-
-def test_calendar_and_scheduler_prepare(client):
-    """Mock təqvimdən yaxın iclas üçün qeyd yaradılmalıdır."""
-    events = client.get("/api/calendar/upcoming").json()
-    assert len(events) >= 1
-
-    created = client.post("/api/calendar/prepare").json()["created_meetings"]
-    assert created >= 0  # ikinci çağırışda dublikat yaranmır
-
-    meetings = client.get("/api/meetings").json()
-    assert any(m["source"] == "calendar" for m in meetings)

@@ -5,6 +5,7 @@
 /api/ingest/search — bilik bazasında axtarış (debug/nümayiş)
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import require_user
 from app.ingestion.service import extract_pdf_text, ingest_document, search_context
@@ -28,21 +29,37 @@ async def ingest_file(file: UploadFile) -> IngestResult:
     """PDF və ya mətn faylını yükləyib bilik bazasına salır."""
     data = await file.read()
     name = file.filename or "document"
-    if name.lower().endswith(".pdf"):
-        content = extract_pdf_text(data)
-        source_type = "pdf"
-    else:
-        content = data.decode("utf-8", errors="replace")
-        source_type = "text"
-    return ingest_document(
-        IngestRequest(title=name, content=content, source_type=source_type)
-    )
+
+    def _process() -> IngestResult:
+        # PDF çıxarışı (CPU) + embedding (şəbəkə) sinxrondur — event loop-u
+        # kilidləməmək üçün thread hovuzunda icra olunur
+        if name.lower().endswith(".pdf"):
+            content = extract_pdf_text(data)
+            source_type = "pdf"
+        else:
+            content = data.decode("utf-8", errors="replace")
+            source_type = "text"
+        return ingest_document(
+            IngestRequest(title=name, content=content, source_type=source_type)
+        )
+
+    return await run_in_threadpool(_process)
 
 
 @router.get("/search")
 def search(q: str, top_k: int = 4) -> list[dict]:
     """Bilik bazasında semantik axtarış — agentin istifadə etdiyi eyni funksiya."""
     return search_context(q, top_k)
+
+
+@router.get("/status/{doc_id}")
+def ingest_status_ep(doc_id: str) -> dict:
+    """Yükləmə mərhələsi — frontend PDF emalını canlı göstərmək üçün poll edir."""
+    from app.services import ingest_status
+
+    return ingest_status.get(doc_id) or {
+        "doc_id": doc_id, "stage": "unknown", "done": True, "qa": 0,
+    }
 
 
 @router.get("/documents")

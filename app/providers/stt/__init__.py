@@ -31,4 +31,4 @@ def create_stt_provider(settings: Settings) -> BaseSTTProvider:
     elif choice != "mock":
         logger.warning("Naməlum STT_PROVIDER=%s — mock istifadə olunur", choice)
 
-    return MockSTTProvider()
+    return MockSTTProvider(user_name=settings.user_name)

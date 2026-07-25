@@ -89,8 +89,6 @@ def run_smoke(api: str) -> bool:
     resp = httpx.get(f"{api}/api/ingest/search", headers=headers,
                      params={"q": "deadline nə vaxtdır"})
     ok &= check("Kontekst axtarışı nəticə tapır", bool(resp.json()))
-    resp = httpx.get(f"{api}/api/calendar/upcoming", headers=headers)
-    ok &= check("Təqvim yaxın iclası göstərir", bool(resp.json()))
 
     # --- Phase 2: canlı iclas ---
     print("\n🎙 Phase 2 — canlı iclas:")

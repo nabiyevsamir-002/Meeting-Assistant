@@ -45,8 +45,9 @@ class MeetingMemory:
         # Window yaddaşına yazırıq (input/output cütü tələb olunur)
         self.window.chat_memory.add_user_message(line)
         self._pending.append(self._HumanMessage(content=line))
-        # Varlıqları yeniləyirik
-        self.entities.update(text)
+        # SÜRƏT: varlıq çıxarılması (LLM çağırışı) canlı axında getmir —
+        # mətn növbəyə düşür, iclas sonunda toplu emal olunur (flush)
+        self.entities.defer(text)
 
     def recent_window(self) -> str:
         """Son K seqmenti mətn kimi qaytarır (agentin aləti üçün)."""

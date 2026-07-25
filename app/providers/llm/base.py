@@ -5,7 +5,7 @@
   - generate_structured(): Pydantic sxeminə uyğun strukturlaşdırılmış cavab
 """
 from abc import ABC, abstractmethod
-from typing import Optional, TypeVar
+from typing import Iterator, Optional, TypeVar
 
 from pydantic import BaseModel
 
@@ -28,6 +28,20 @@ class BaseLLMProvider(ABC):
         stop: Optional[list[str]] = None,
     ) -> str:
         """Prompt-a sərbəst mətn cavabı qaytarır."""
+
+    def stream(
+        self,
+        prompt: str,
+        *,
+        system: Optional[str] = None,
+        max_tokens: int = 1024,
+    ) -> Iterator[str]:
+        """Cavabı token-token axıdır (canlı yazılma effekti üçün).
+
+        Default: axın dəstəklənmirsə tam cavabı bir dəfəyə verir. Claude/OpenAI
+        bunu real streaming ilə əvəz edir.
+        """
+        yield self.complete(prompt, system=system, max_tokens=max_tokens)
 
     @abstractmethod
     def generate_structured(

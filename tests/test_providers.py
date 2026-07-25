@@ -85,3 +85,42 @@ def test_mock_embeddings_deterministic_and_similar():
     hits = store.search("test", emb.embed_one("deadline nə vaxtdır layihənin"), top_k=2)
     # Ortaq sözlü sənəd birinci gəlməlidir
     assert hits[0].payload["t"] == "deadline"
+
+
+def test_transcript_glossary_corrects_tech_terms():
+    """E: STT-nin ingilis texniki-termin səhvləri düzəlməlidir."""
+    from app.text_fixes import correct_transcript
+
+    assert correct_transcript("epi yaydan istifadə edək") == "API-dən istifadə edək"
+    assert "API" in correct_transcript("Biz epi seçdik")
+    # Adi mətn dəyişməməlidir
+    assert correct_transcript("Layihə planı hazırdır") == "Layihə planı hazırdır"
+
+
+def test_question_prefilter_signal():
+    """A: sual əlaməti düzgün tanınmalı, adi cümlə atlanmalıdır."""
+    from app.text_fixes import has_question_signal
+
+    assert has_question_signal("Samir, nə düşünürsən?", "Samir")     # "?" + sual sözü
+    assert has_question_signal("Bu barədə fikrin nədir", "Aynur")    # sual sözü ("nədir")
+    assert has_question_signal("Büdcə hazırdırmı", "Aynur")          # enklitik "mı"
+    assert has_question_signal("Aynur bunu necə görür", "Aynur")     # ad mətndə
+    # Sual əlaməti olmayan adi cümlə → LLM atlanmalı
+    assert not has_question_signal("Layihə planını nəzərdən keçiririk.", "Samir")
+
+
+def test_prepared_qa_build_and_match():
+    """J: sənəddən hazırlanan Q&A oxşar canlı sualla tutulmalı, fərqli ilə yox."""
+    from app.services import prepared_qa
+
+    prepared_qa.reset()
+    n = prepared_qa.build_from_text(
+        "Layihənin deadline-ı 30 sentyabrdır. Büdcə artıq təsdiqlənib."
+    )
+    assert n >= 1
+    hit = prepared_qa.match("Layihənin deadline-ı 30 sentyabrdır?", threshold=0.6)
+    assert hit is not None
+    assert "sentyabr" in hit.answer.lower()
+    miss = prepared_qa.match("Tamamilə başqa mövzu barədə söhbət", threshold=0.95)
+    assert miss is None
+    prepared_qa.reset()

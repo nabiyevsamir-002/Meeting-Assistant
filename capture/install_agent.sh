@@ -30,11 +30,11 @@ mkdir -p "$CONFIG_DIR"
 if [ -f "$CONFIG_DIR/config" ]; then
   echo "Mövcud konfiqurasiya saxlanılır: $CONFIG_DIR/config"
 else
-  read -p  "API ünvanı [https://api.visualkey.az]: " API
+  read -p  "API ünvanı [https://aimeetingassistant.duckdns.org]: " API
   read -p  "UI istifadəçi adı [samir]: " USERNAME
   read -s -p "UI şifrəsi: " PASSWORD; echo
   cat > "$CONFIG_DIR/config" <<EOF
-API=${API:-https://api.visualkey.az}
+API=${API:-https://aimeetingassistant.duckdns.org}
 USERNAME=${USERNAME:-samir}
 PASSWORD=$PASSWORD
 DEVICE=blackhole

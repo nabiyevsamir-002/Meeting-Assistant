@@ -26,6 +26,7 @@ class WhisperSTTProvider(BaseSTTProvider):
         *,
         filename: str = "chunk.wav",
         language: Optional[str] = None,
+        user_name: Optional[str] = None,  # yalnız mock işlədir
     ) -> TranscriptionResult:
         # OpenAI SDK fayl obyekti gözləyir — adı ilə birlikdə veririk
         buf = io.BytesIO(audio)

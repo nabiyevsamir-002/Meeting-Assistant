@@ -5,14 +5,14 @@
 #     cd /opt/meeting-assistant && bash deploy/activate_https.sh
 #
 # Tələb: registrarda bu A record-lar droplet IP-nə yönəlməlidir:
-#     api.visualkey.az  -> 64.226.123.27
-#     n8n.visualkey.az  -> 64.226.123.27
+#     aimeetingassistant.duckdns.org  -> 46.101.178.195
+#     aimeetingassistantn8n.duckdns.org  -> 46.101.178.195
 # =====================================================================
 set -e
 cd /opt/meeting-assistant
 
 echo "1/4 DNS yoxlanılır..."
-for host in api.visualkey.az n8n.visualkey.az; do
+for host in aimeetingassistant.duckdns.org aimeetingassistantn8n.duckdns.org; do
   if ! getent hosts "$host" >/dev/null; then
     echo "XƏTA: $host hələ IP-yə yönəlmir. A record əlavə edin və DNS yayılmasını gözləyin (5-30 dəq)."
     exit 1
@@ -27,7 +27,7 @@ docker run --rm -p 80:80 \
   -v meeting-assistant_certbot_certs:/etc/letsencrypt \
   -v meeting-assistant_certbot_www:/var/www/certbot \
   certbot/certbot certonly --standalone \
-  -d api.visualkey.az -d n8n.visualkey.az \
+  -d aimeetingassistant.duckdns.org -d aimeetingassistantn8n.duckdns.org \
   --email nebiyevsamir002@gmail.com --agree-tos --no-eff-email
 
 echo "4/4 İstehsal stack-i (nginx + HTTPS) qaldırılır..."
@@ -41,6 +41,6 @@ docker compose --project-directory . -f deploy/docker-compose.prod.yml \
 
 echo ""
 echo "✅ Hazırdır:"
-echo "   https://api.visualkey.az/health"
-echo "   https://api.visualkey.az/ui/index.html"
-echo "   https://n8n.visualkey.az"
+echo "   https://aimeetingassistant.duckdns.org/health"
+echo "   https://aimeetingassistant.duckdns.org/ui/index.html"
+echo "   https://aimeetingassistantn8n.duckdns.org"

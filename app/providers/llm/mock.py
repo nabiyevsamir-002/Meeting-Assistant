@@ -26,6 +26,8 @@ from app.models.structured import (
     Entity,
     EntityList,
     MeetingSummaryModel,
+    PreparedQA,
+    PreparedQAList,
     QuickSummary,
 )
 from app.providers.llm.base import BaseLLMProvider, TModel
@@ -80,6 +82,20 @@ class MockLLMProvider(BaseLLMProvider):
 
         # 3) Ümumi hal — qısa canned cavab
         return "Mock cavab: real LLM açarı əlavə olunanda bu cavab canlı modeldən gələcək."
+
+    def stream(self, prompt, *, system=None, max_tokens=1024):  # noqa: ANN001
+        """ANSWER_STREAM üçün: kontekstə əsaslanan qısa cavabı söz-söz axıdır."""
+        ctx = _tag(prompt, "context")
+        ctx = re.sub(r"\[[^\]]*\]\s*", "", ctx)  # [sənəd adı] prefiksini at
+        sents = _sentences(ctx)
+        snip = sents[0][:170] if sents and "tapılmadı" not in ctx else ""
+        if snip:
+            text = f"Fikrimcə, {snip} Əlavə detalları yüklənmiş sənədə əsasən dəqiqləşdirə bilərəm."
+        else:
+            text = ("Bu barədə dəqiq məlumatı yoxlayıб bir azdan qayıdım; "
+                    "istəsəniz komanda ilə də dəqiqləşdirim.")
+        for word in text.split(" "):
+            yield word + " "
 
     def _react_step(self, prompt: str) -> str:
         """ReAct dövrünün bir addımını imitasiya edir.
@@ -143,6 +159,7 @@ class MockLLMProvider(BaseLLMProvider):
             "ActionItems": self._action_items,
             "EntityList": self._entities,
             "QuickSummary": self._quick_summary,
+            "PreparedQAList": self._prepared_qa,
         }
         builder = builders.get(schema.__name__)
         if builder:
@@ -151,13 +168,17 @@ class MockLLMProvider(BaseLLMProvider):
 
     def _detect_questions(self, prompt: str) -> DetectedQuestions:
         """<mətn> içindəki "?" ilə bitən cümlələri sual kimi qaytarır."""
-        text = _tag(prompt, "mətn")
+        text = _tag(prompt, "text")
+        # DETECT_QUESTIONS şablonundakı ("Ad") hissəsindən istifadəçinin adını çıxarırıq —
+        # beləliklə mock da real LLM kimi İCLASA BAĞLI ada görə işləyir
+        name_m = re.search(r'\("([^"]+)"\)', prompt)
+        user_name = re.escape(name_m.group(1)) if name_m else "Samir"
         questions: list[DetectedQuestion] = []
         for sent in _sentences(text):
             if not sent.endswith("?"):
                 continue
             # İstifadəçinin adı çəkilibsə və ya "siz" müraciəti varsa — ona ünvanlanıb
-            directed = bool(re.search(r"\b(Samir|siz|sizcə|sən)\b", sent, re.IGNORECASE))
+            directed = bool(re.search(rf"\b({user_name}|siz|sizcə|sən)\b", sent, re.IGNORECASE))
             questions.append(
                 DetectedQuestion(
                     question=sent,
@@ -170,8 +191,10 @@ class MockLLMProvider(BaseLLMProvider):
 
     def _answer_options(self, prompt: str) -> AnswerOptions:
         """Sual + kontekstdən 3 fərqli tonda cavab variantı qurur."""
-        question = _tag(prompt, "sual") or "Sual"
-        context = _tag(prompt, "kontekst")
+        question = _tag(prompt, "question") or "Sual"
+        context = _tag(prompt, "context")
+        # Axtarış nəticəsinin "[sənəd adı]" prefiksi cümlə kimi kəsilməsin
+        context = re.sub(r"\[[^\]]*\]\s*", "", context)
         has_ctx = bool(context and "tapılmadı" not in context)
         snippet = _sentences(context)[0][:200] if has_ctx and _sentences(context) else ""
         options = [
@@ -196,8 +219,8 @@ class MockLLMProvider(BaseLLMProvider):
 
     def _meeting_summary(self, prompt: str) -> MeetingSummaryModel:
         """Transkriptdən sadə qaydalarla yekun xülasə qurur."""
-        transcript = _tag(prompt, "transkript")
-        topic_m = re.search(r"İclasın mövzusu:\s*(.+)", prompt)
+        transcript = _tag(prompt, "transcript")
+        topic_m = re.search(r"Meeting topic:\s*(.+)", prompt)
         topic = topic_m.group(1).strip() if topic_m else "İclas"
         sents = _sentences(transcript)
         key_points = [s for s in sents if not s.endswith("?")][:4]
@@ -216,7 +239,7 @@ class MockLLMProvider(BaseLLMProvider):
 
     def _action_items(self, prompt: str) -> ActionItems:
         """Gələcək zaman felli cümlələrdən action item-lər çıxarır."""
-        transcript = _tag(prompt, "transkript")
+        transcript = _tag(prompt, "transcript")
         items: list[ActionItem] = []
         for sent in _sentences(transcript):
             if not any(v in sent.lower() for v in _ACTION_VERBS):
@@ -244,7 +267,7 @@ class MockLLMProvider(BaseLLMProvider):
 
     def _entities(self, prompt: str) -> EntityList:
         """Cümlə ortasındakı böyük hərfli sözləri varlıq kimi çıxarır."""
-        text = _tag(prompt, "mətn")
+        text = _tag(prompt, "text")
         entities: dict[str, Entity] = {}
         for sent in _sentences(text):
             words = sent.split()
@@ -258,9 +281,24 @@ class MockLLMProvider(BaseLLMProvider):
                     )
         return EntityList(entities=list(entities.values())[:6])
 
+    def _prepared_qa(self, prompt: str) -> PreparedQAList:
+        """<text> içindəki cümlələrdən ehtimal Q&A cütləri qurur (J üçün).
+
+        Hər informativ cümlə → sual (cümlə + "?") + cavab (cümlənin özü).
+        Beləliklə canlı sual cümlə ilə üst-üstə düşəndə embedding oxşarlığı
+        yüksək olur və hazır cavab tutulur.
+        """
+        text = _tag(prompt, "text")
+        items: list[PreparedQA] = []
+        for sent in _sentences(text)[:12]:
+            if len(sent) < 8:
+                continue
+            items.append(PreparedQA(question=sent.rstrip(".!?") + "?", answer=sent))
+        return PreparedQAList(items=items)
+
     def _quick_summary(self, prompt: str) -> QuickSummary:
         """Son pəncərədən 2 cümləlik cari vəziyyət icmalı qurur."""
-        window = _tag(prompt, "mətn")
+        window = _tag(prompt, "text")
         sents = _sentences(window)
         last = " ".join(sents[-2:])[:300] if sents else "Müzakirə davam edir."
         return QuickSummary(

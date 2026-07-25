@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS meetings (
     status       TEXT NOT NULL,
     language     TEXT NOT NULL DEFAULT 'az',
     source       TEXT NOT NULL DEFAULT 'manual',
+    user_name    TEXT,
     scheduled_at TEXT,
     started_at   TEXT,
     ended_at     TEXT,
@@ -97,6 +98,11 @@ def get_conn() -> Iterator[sqlite3.Connection]:
 
 
 def init_db() -> None:
-    """Bütün cədvəlləri yaradır (mövcuddursa toxunmur)."""
+    """Bütün cədvəlləri yaradır (mövcuddursa toxunmur) və miqrasiyaları tətbiq edir."""
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        # Miqrasiya: köhnə bazalarda user_name sütunu yoxdur — əlavə edirik.
+        # (İclasa bağlı ad: suallar "bu şəxsə ünvanlanıb?" yoxlamasında istifadə olunur.)
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(meetings)")}
+        if "user_name" not in cols:
+            conn.execute("ALTER TABLE meetings ADD COLUMN user_name TEXT")

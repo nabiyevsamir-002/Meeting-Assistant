@@ -19,6 +19,30 @@ class EntityMemory:
     def __init__(self, llm_provider: BaseLLMProvider) -> None:
         self._llm = llm_provider
         self._entities: dict[str, Entity] = {}
+        # SÜRƏT: canlı iclasda hər seqmentə LLM çağırışı etməmək üçün mətnlər
+        # yığılır və iclasın sonunda toplu şəkildə emal olunur (flush)
+        self._deferred: list[str] = []
+
+    def defer(self, text: str) -> None:
+        """Mətni sonrakı toplu emal üçün növbəyə qoyur (canlı axını yavaşlatmır)."""
+        self._deferred.append(text)
+
+    def flush(self) -> None:
+        """Yığılmış mətnlərdən varlıqları toplu çıxarır (iclas sonunda çağırılır)."""
+        if not self._deferred:
+            return
+        # Çox uzun iclaslarda tək prompt şişməsin — ~4000 simvolluq qruplarla
+        group: list[str] = []
+        size = 0
+        for t in self._deferred:
+            if size + len(t) > 4000 and group:
+                self.update("\n".join(group))
+                group, size = [], 0
+            group.append(t)
+            size += len(t)
+        if group:
+            self.update("\n".join(group))
+        self._deferred = []
 
     def update(self, text: str) -> None:
         """Mətndən varlıqları çıxarıb yaddaşa birləşdirir."""

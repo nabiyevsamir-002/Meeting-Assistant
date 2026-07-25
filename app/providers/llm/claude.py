@@ -17,10 +17,15 @@ class ClaudeLLMProvider(BaseLLMProvider):
 
     name = "claude"
 
+    # İlişən bir çağırış pipeline-ı dəqiqələrlə saxlamasın
+    _TIMEOUT = 60.0
+
     def __init__(self, api_key: str, model: str) -> None:
         import anthropic  # yalnız bu provayder seçiləndə import olunur
 
-        self._client = anthropic.Anthropic(api_key=api_key)
+        self._client = anthropic.Anthropic(
+            api_key=api_key, timeout=self._TIMEOUT, max_retries=1
+        )
         self._model = model
         self._api_key = api_key
 
@@ -55,6 +60,17 @@ class ClaudeLLMProvider(BaseLLMProvider):
             resp = self._client.messages.create(**kwargs)
         return "".join(b.text for b in resp.content if b.type == "text")
 
+    def stream(self, prompt, *, system=None, max_tokens=1024):  # noqa: ANN001
+        """Cavabı token-token axıdır (Claude native streaming)."""
+        kwargs: dict = dict(model=self._model, max_tokens=max_tokens,
+                            messages=[{"role": "user", "content": prompt}])
+        if system:
+            kwargs["system"] = system
+        with self._client.messages.stream(**kwargs) as s:
+            for text in s.text_stream:
+                if text:
+                    yield text
+
     def generate_structured(
         self,
         prompt: str,
@@ -68,7 +84,9 @@ class ClaudeLLMProvider(BaseLLMProvider):
             import anthropic
             import instructor
 
-            client = instructor.from_anthropic(anthropic.Anthropic(api_key=self._api_key))
+            client = instructor.from_anthropic(
+                anthropic.Anthropic(api_key=self._api_key, timeout=self._TIMEOUT, max_retries=1)
+            )
             messages = [{"role": "user", "content": prompt}]
             return client.messages.create(
                 model=self._model,

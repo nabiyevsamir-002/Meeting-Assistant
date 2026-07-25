@@ -55,6 +55,27 @@ def ingest_document(req: IngestRequest) -> IngestResult:
                        req.meeting_topic, len(chunks))
     logger.info("Sənəd yükləndi: «%s» (%d parça, backend=%s)",
                 req.title, len(chunks), vectors.name)
+
+    # Frontend mərhələ göstəricisi üçün: parçalar yazıldı
+    from app.services import ingest_status
+
+    ingest_status.set(doc_id, title=req.title, stage="saved",
+                      chunks=len(chunks), qa=0, done=False)
+
+    # J: öncədən Q&A hazırlığı — arxa planda (yükləmə cavabını gözlətmir),
+    # beləliklə canlı iclasda uyğun sual gələndə cavab hazır olur.
+    if settings.prepared_qa_enabled:
+        import threading
+
+        from app.services import prepared_qa
+
+        threading.Thread(
+            target=prepared_qa.build_from_text, args=(req.content, doc_id), daemon=True
+        ).start()
+    else:
+        # J söndürülübsə mərhələ dərhal tamamlanmış sayılır
+        ingest_status.set(doc_id, stage="done", done=True, qa=0)
+
     return IngestResult(doc_id=doc_id, title=req.title,
                         chunk_count=len(chunks), backend=vectors.name)
 

@@ -7,7 +7,7 @@ Necə işləyir:
   4. İclas bitəndə (status dəyişəndə) tutma avtomatik dayanır
 
 Konfiqurasiya faylı: ~/Library/Application Support/meeting-assistant/config
-  API=https://api.visualkey.az
+  API=https://aimeetingassistant.duckdns.org
   USERNAME=samir
   PASSWORD=...
   DEVICE=blackhole          # öz səsiniz üçün Aggregate Device adı yazın
@@ -46,7 +46,7 @@ log = logging.getLogger("capture-agent")
 def load_config() -> dict:
     """KEY=VALUE formatlı sadə konfiqurasiya faylını oxuyur."""
     cfg = {
-        "API": "https://api.visualkey.az",
+        "API": "https://aimeetingassistant.duckdns.org",
         "USERNAME": "",
         "PASSWORD": "",
         "DEVICE": "blackhole",
@@ -80,12 +80,15 @@ class CaptureAgent:
         self._capturing_meeting: Optional[str] = None
         # Cihaz tapılmayanda log spamının qarşısını alan cooldown
         self._device_warn_at = 0.0
+        # SÜRƏT: davamlı bağlantı — hər parçada yeni TCP/TLS əl-sıxma olmasın
+        # (xüsusən prod https serverə yönələndə hər çağırışda qənaət)
+        self._client = httpx.Client(timeout=120)
 
     # --- API köməkçiləri ---
 
     def _login(self) -> None:
         """JWT alır; agent uzun işlədiyi üçün vaxtı bitəndə yenidən çağırılır."""
-        resp = httpx.post(
+        resp = self._client.post(
             f"{self.api}/api/auth/token",
             json={"username": self.username, "password": self.password},
             timeout=30,
@@ -99,11 +102,11 @@ class CaptureAgent:
         if not self._token:
             self._login()
         headers = {"Authorization": f"Bearer {self._token}"}
-        resp = httpx.request(method, f"{self.api}{path}", headers=headers, timeout=120, **kw)
+        resp = self._client.request(method, f"{self.api}{path}", headers=headers, **kw)
         if resp.status_code == 401:
             self._login()
             headers = {"Authorization": f"Bearer {self._token}"}
-            resp = httpx.request(method, f"{self.api}{path}", headers=headers, timeout=120, **kw)
+            resp = self._client.request(method, f"{self.api}{path}", headers=headers, **kw)
         return resp
 
     def _find_live_meeting(self) -> Optional[dict]:

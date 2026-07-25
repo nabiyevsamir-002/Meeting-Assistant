@@ -6,8 +6,6 @@ Testlərdə reset_runtime() ilə sıfırlanır (fərqli env üçün).
 from functools import lru_cache
 
 from app.config import get_settings
-from app.providers.calendar import create_calendar_provider
-from app.providers.calendar.base import BaseCalendarProvider
 from app.providers.card import BaseCardProvider, create_card_provider
 from app.providers.delivery import BaseDeliveryProvider, create_delivery_provider
 from app.providers.embeddings import BaseEmbeddingProvider, create_embedding_provider
@@ -48,12 +46,6 @@ def get_vectors() -> BaseVectorStore:
 
 
 @lru_cache
-def get_calendar() -> BaseCalendarProvider:
-    """Təqvim provayderi (mock/google)."""
-    return create_calendar_provider(get_settings())
-
-
-@lru_cache
 def get_card() -> BaseCardProvider:
     """Kart provayderi (mock/hcti)."""
     return create_card_provider(get_settings())
@@ -69,9 +61,17 @@ def reset_runtime() -> None:
     """Bütün keşləri sıfırlayır — testlərdə env dəyişəndə çağırılır."""
     get_settings.cache_clear()
     for fn in (get_llm, get_stt, get_tts, get_embedder, get_vectors,
-               get_calendar, get_card, get_delivery):
+               get_card, get_delivery):
         fn.cache_clear()
     # İclas runtime reyestri də sıfırlanmalıdır (dövri importdan qaçmaq üçün burada)
-    from app.services import meeting_service
+    from app.services import (
+        ingest_status,
+        meeting_service,
+        pipeline_status,
+        prepared_qa,
+    )
 
     meeting_service.reset_registry()
+    prepared_qa.reset()      # J: öncədən hazırlanmış Q&A keşi
+    ingest_status.reset()    # sənəd yükləmə mərhələ izləyicisi
+    pipeline_status.reset()  # iclas-sonrası pipeline mərhələ izləyicisi

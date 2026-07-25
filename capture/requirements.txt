@@ -2,3 +2,4 @@
 # (fayl rejimi heç bir əlavə asılılıq tələb etmir — stdlib kifayətdir)
 sounddevice>=0.4
 numpy>=1.24
+azure-cognitiveservices-speech

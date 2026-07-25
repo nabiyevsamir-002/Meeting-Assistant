@@ -1,6 +1,10 @@
 """İclas endpointləri (Phase 2 və 3) — canlı pipeline-ın API üzü."""
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+import asyncio
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import require_user
 from app.models.core import (
@@ -29,7 +33,7 @@ def _get_or_404(meeting_id: str) -> Meeting:
 def create_meeting(req: MeetingCreate) -> Meeting:
     """Yeni iclas yaradır (hələ başlamır)."""
     meeting = Meeting(topic=req.topic, language=req.language,
-                      scheduled_at=req.scheduled_at)
+                      scheduled_at=req.scheduled_at, user_name=req.user_name)
     repo.save_meeting(meeting)
     return meeting
 
@@ -79,8 +83,11 @@ async def add_audio_segment(meeting_id: str, file: UploadFile) -> TranscriptSegm
     if meeting.status != "live":
         raise HTTPException(status_code=409, detail="İclas canlı deyil — əvvəlcə /start çağırın")
     audio = await file.read()
-    return meeting_service.process_audio_chunk(
-        meeting, audio, file.filename or "chunk.wav"
+    # VACİB: STT + LLM çağırışları sinxron və uzundur (real provayderlə onlarla
+    # saniyə). Birbaşa çağırsaq event loop kilidlənir və BÜTÜN server donur —
+    # ona görə işi thread hovuzuna veririk, loop isə digər sorğulara cavab verir.
+    return await run_in_threadpool(
+        meeting_service.process_audio_chunk, meeting, audio, file.filename or "chunk.wav"
     )
 
 
@@ -89,6 +96,35 @@ def feed(meeting_id: str, after_id: int = 0) -> list[FeedEvent]:
     """Canlı feed — UI son gördüyü hadisədən sonrakıları alır (polling)."""
     _get_or_404(meeting_id)
     return repo.list_feed_events(meeting_id, after_id)
+
+
+@router.get("/{meeting_id}/stream")
+async def stream_feed(meeting_id: str, request: Request, after_id: int = 0):
+    """Feed-in SSE (streaming) versiyası — hadisələr yazılan kimi DƏRHAL çatır.
+
+    Panel bunu EventSource ilə oxuyur; 2 saniyəlik polling gecikməsi aradan qalxır.
+    Alınmazsa panel avtomatik polling-ə keçir (etibarlılıq üçün ehtiyat).
+    """
+    _get_or_404(meeting_id)
+
+    async def gen():
+        last = after_id
+        while True:
+            if await request.is_disconnected():
+                break
+            # SQLite oxunuşu sinxrondur — event loop-u bloklamamaq üçün thread hovuzunda
+            events = await run_in_threadpool(repo.list_feed_events, meeting_id, last)
+            for e in events:
+                last = max(last, e.id)
+                yield f"data: {json.dumps(e.model_dump(), ensure_ascii=False)}\n\n"
+            await asyncio.sleep(0.2)  # yeni hadisələri ~0.2s-də bir yoxla (daha canlı)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+                 "Connection": "keep-alive"},
+    )
 
 
 @router.post("/{meeting_id}/end", response_model=MeetingReport)
@@ -100,6 +136,14 @@ def end_meeting(meeting_id: str) -> MeetingReport:
     if not report:
         raise HTTPException(status_code=500, detail="Hesabat yaradıla bilmədi")
     return report
+
+
+@router.get("/{meeting_id}/end-status")
+def end_status(meeting_id: str) -> dict:
+    """İclas-sonrası pipeline mərhələsi — frontend «Bitir» prosesini canlı göstərir."""
+    from app.services import pipeline_status
+
+    return pipeline_status.get(meeting_id) or {"meeting_id": meeting_id, "stage": "ended"}
 
 
 @router.get("/{meeting_id}/report", response_model=MeetingReport)

@@ -471,6 +471,9 @@ let historyList = [];        // keçmiş iclaslar
 let historyDetail = null;    // baxılan hesabat detalı
 let historySearch = "";      // tarixçə axtarış sözü
 let token = localStorage.getItem("token") || null;  // prod giriş token-i
+let micStream = null, capturing = false;   // brauzer mikrofon tutması
+let postAnim = null, ingestAnim = null;    // mərhələ animatorları
+let ingestedDocs = [];                     // bilik bazasına yüklənmiş sənədlər (davamlı təsdiq)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function attachMeeting(m) {
@@ -518,6 +521,75 @@ async function doLogin() {
   }
 }
 
+/* --- Brauzer mikrofonu ilə səs tutma (canlı iclas üçün, xarici agent lazım deyil) --- */
+function pickMime() {
+  const opts = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
+  for (const m of opts) { try { if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; } catch (_) {} }
+  return "";
+}
+async function startMicCapture(id) {
+  if (capturing) return;
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    setStatus("🎙 Bu brauzer mikrofon tutmasını dəstəkləmir", false); return;
+  }
+  try {
+    // Spiker səsini (qarşı tərəfi) də tutmaq üçün exo ləğvi/səs-küy azaltma SÖNDÜRÜLÜR
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+  } catch (e) {
+    setStatus("🎙 Mikrofon icazəsi verilmədi — brauzer ünvan zolağındakı 🔒-dan icazə verin", false);
+    return;
+  }
+  capturing = true;
+  const mime = pickMime();
+  const recordChunk = () => new Promise((resolve) => {
+    if (!capturing || !micStream) { resolve(); return; }
+    let rec;
+    try { rec = mime ? new MediaRecorder(micStream, { mimeType: mime }) : new MediaRecorder(micStream); }
+    catch (_) { resolve(); return; }
+    const parts = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
+    rec.onstop = async () => {
+      const blob = new Blob(parts, { type: rec.mimeType || "audio/webm" });
+      if (blob.size > 1400 && meeting && meeting.id === id) {
+        const fd = new FormData();
+        fd.append("file", blob, "chunk.webm");   // endpoint sahə adı: file
+        try {
+          await fetch(`/api/meetings/${id}/segments/audio`, {
+            method: "POST",
+            headers: token ? { "Authorization": "Bearer " + token } : {},
+            body: fd,
+          });
+        } catch (_) { /* şəbəkə xətası — növbəti parça davam edir */ }
+      }
+      resolve();
+    };
+    try { rec.start(); } catch (_) { resolve(); return; }
+    // Hər parça TAM webm olsun deyə hər dəfə YENİ recorder (5s)
+    setTimeout(() => { try { if (rec.state !== "inactive") rec.stop(); } catch (_) {} }, 5000);
+  });
+  (async () => { while (capturing) { await recordChunk(); } })();
+}
+function stopMicCapture() {
+  capturing = false;
+  if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+}
+
+/* --- Mərhələ animatoru: addımları həmişə bir-bir, hamar sürətlə doldurur
+   (backend nə qədər sürətli olsa da UI tullanmır) --- */
+function startPacer(get, render, stepMs, onDone) {
+  const t = setInterval(() => {
+    const st = get();
+    if (!st) { clearInterval(t); return; }
+    if (st.error) { clearInterval(t); render(); return; }
+    const cap = st.done ? st.total : st.target;   // done olana qədər son addımı doldurmuruq
+    if (st.shown < cap) { st.shown++; render(); }
+    else if (st.done && st.shown >= st.total) { clearInterval(t); render(); if (onDone) onDone(); }
+  }, stepMs);
+  return t;
+}
+
 /* --- İclas idarəsi --- */
 async function findLive() {
   const list = await api("/api/meetings");
@@ -528,7 +600,7 @@ $("startBtn").onclick = async () => {
   try {
     let m = await findLive();
     if (m) {
-      attachMeeting(m); startStream();
+      attachMeeting(m); startStream(); startMicCapture(m.id);
       setStatus(`Mövcud canlı iclasa qoşuldu: <b>${esc(m.topic)}</b> — təzəsini istəyirsinizsə əvvəl ⏹ Bitir basın`, true);
       return;
     }
@@ -537,8 +609,8 @@ $("startBtn").onclick = async () => {
       body: JSON.stringify({ topic: "Meet testi", user_name: $("name").value.trim() || null }),
     });
     m = await api(`/api/meetings/${m.id}/start`, { method: "POST" });
-    attachMeeting(m); startStream();
-    setStatus(`<b>${esc(m.topic)}</b> canlıdır — agent səsi tutmağa başlayacaq`, true);
+    attachMeeting(m); startStream(); startMicCapture(m.id);
+    setStatus(`<b>${esc(m.topic)}</b> canlıdır 🎙 — mikrofon dinləyir. Onlayn iclasda qarşı tərəf də eşidilsin deyə <b>spikerlə</b> (qulaqlıqsız) işləyin.`, true);
   } catch (e) { setStatus("Başlatma xətası: " + esc(e.message), false); }
 };
 
@@ -546,40 +618,28 @@ $("endBtn").onclick = async () => {
   if (!meeting) { setStatus("Bitiriləcək iclas yoxdur", false); return; }
   const id = meeting.id, topic = meeting.topic;
   stopStream();
-  postState = { id, topic, stage: "ended", delivered: null };
+  stopMicCapture();
+  // shown = göstərilən tamamlanmış addım; target = son çatdırılma addımına qədər (6);
+  // done olanda pacer 7-ci addımı da doldurur. Beləliklə həmişə 1→7 hamar gedir.
+  postState = { id, topic, shown: 0, target: 6, total: 7, done: false, delivered: null, error: false };
   renderPost();
   setStatus(`<b>${esc(topic)}</b> bitirilir — hesabat hazırlanır…`, true);
 
-  // Pipeline mərhələlərini paralel poll edirik (POST /end bloklayır)
-  let polling = true;
-  (async () => {
-    while (polling) {
-      await sleep(700);
-      if (!polling) break;
-      try {
-        const s = await api(`/api/meetings/${id}/end-status`);
-        if (postState) {
-          postState.stage = s.stage || postState.stage;
-          if (s.delivered != null) postState.delivered = s.delivered;
-          renderPost();
-        }
-        if (s.stage === "done" || s.stage === "error") break;
-      } catch (_) { /* poll xətası — davam */ }
-    }
-  })();
+  if (postAnim) clearInterval(postAnim);
+  postAnim = startPacer(() => postState, renderPost, 780, () => {
+    setTimeout(() => { if (postState && postState.topic === topic) { postState = null; renderPost(); } }, 12000);
+  });
 
   try {
     const report = await api(`/api/meetings/${id}/end`, { method: "POST" });
-    polling = false;
-    postState = { id, topic, stage: "done", delivered: !!report.delivered };
-    renderPost();
+    if (postState) { postState.done = true; postState.delivered = !!report.delivered; }
     meeting = null;
     items.clear(); transcript = []; quickSummary = ""; stats.startedAt = null;
     render();
     setStatus(`✅ <b>${esc(topic)}</b> bitdi, hesabat hazırdır — yenisi üçün «▶ Başlat»`, false);
-    setTimeout(() => { if (postState && postState.topic === topic) { postState = null; renderPost(); } }, 12000);
   } catch (e) {
-    polling = false; postState = null; renderPost();
+    if (postState) postState.error = true;
+    renderPost();
     setStatus("Bitirmə xətası: " + esc(e.message), false);
   }
 };
@@ -593,75 +653,76 @@ async function uploadFile(f) {
   }
   const fd = new FormData();
   fd.append("file", f);
-  ingestState = { title: f.name, stage: "uploading", chunks: 0, qa: 0, doc_id: null };
+  ingestState = { title: f.name, shown: 0, target: 1, total: 4, done: false, error: false, chunks: 0, qa: 0, doc_id: null };
   renderIngest();
+  if (ingestAnim) clearInterval(ingestAnim);
+  ingestAnim = startPacer(() => ingestState, renderIngest, 620, () => {
+    setTimeout(() => { if (ingestState && ingestState.done) { ingestState = null; renderIngest(); } }, 6000);
+  });
   setStatus(`📄 «${esc(f.name)}» yüklənir…`, true);
   try {
     const r = await api("/api/ingest/file", { method: "POST", body: fd });
-    ingestState = { title: r.title, stage: "saved", chunks: r.chunk_count, qa: 0, doc_id: r.doc_id };
-    renderIngest();
+    if (ingestState) { ingestState.chunks = r.chunk_count; ingestState.doc_id = r.doc_id; ingestState.target = 2; ingestState.title = r.title; }
     setStatus(`📄 «${esc(r.title)}» yükləndi — ${r.chunk_count} parça.`, true);
     pollIngest(r.doc_id);
   } catch (e) {
-    ingestState = null; renderIngest();
+    if (ingestState) { ingestState.error = true; renderIngest(); }
     setStatus("Yükləmə xətası: " + esc(e.message), false);
   }
 }
 $("pdf").onchange = () => { if ($("pdf").files[0]) uploadFile($("pdf").files[0]); };
 
-// Emal mərhələlərini poll edir (suallar çıxarılması arxa planda gedir)
+// Emal mərhələlərini poll edir (suallar çıxarılması arxa planda gedir) — yalnız
+// target/done yeniləyir; addımları pacer bir-bir doldurur (tullanma olmur).
 async function pollIngest(docId) {
-  let last = null;
   for (let i = 0; i < 40; i++) {
-    await sleep(800);
+    await sleep(700);
     if (!ingestState || ingestState.doc_id !== docId) return;  // yeni yükləmə başlayıb
     let s;
     try { s = await api(`/api/ingest/status/${docId}`); } catch (_) { break; }
-    ingestState.stage = s.stage || ingestState.stage;
     if (s.qa != null) ingestState.qa = s.qa;
     if (s.chunks) ingestState.chunks = s.chunks;
+    const stg = s.stage;
+    if (stg === "error") { ingestState.error = true; renderIngest(); return; }
+    if (stg === "done" || s.done) {
+      ingestState.done = true;
+      if (ingestState.title && !ingestedDocs.includes(ingestState.title)) ingestedDocs.push(ingestState.title);
+      renderIngest();
+      return;
+    }
+    ingestState.target = (stg === "extracted") ? 3 : Math.max(ingestState.target, 2);
     renderIngest();
-    last = ingestState;
-    if (s.done || s.stage === "done" || s.stage === "error") break;
   }
-  // Bitəndən bir müddət sonra göstəricini yığışdırırıq
-  setTimeout(() => { if (ingestState === last || (ingestState && ingestState.doc_id === docId)) { ingestState = null; renderIngest(); } }, 7000);
-}
-
-// Mərhələ addımlarının vəziyyəti (1..4)
-function ingStep(n) {
-  const s = ingestState, stg = s.stage, qa = s.qa || 0;
-  if (stg === "uploading") return n === 1 ? "active" : "";
-  if (stg === "error") return n <= 2 ? "done" : (n === 3 ? "err" : "");
-  if (n === 1 || n === 2) return "done";
-  if (n === 3) return (stg === "extracted" || stg === "done") ? "done" : "active";
-  if (n === 4) return stg === "done" ? "done" : (stg === "extracted" ? "active" : "");
-  return "";
 }
 
 function renderIngest() {
   const el = $("ingest");
   if (!el) return;
-  if (!ingestState) { el.innerHTML = ""; return; }
-  const s = ingestState, qa = s.qa || 0;
-  const done = s.stage === "done";
-  const err = s.stage === "error";
+  if (!ingestState) {
+    // Davamlı təsdiq: yüklənmiş sənədlər bilik bazasındadır (native "fayl seçilmədi" mətnini əvəz edir)
+    el.innerHTML = ingestedDocs.length
+      ? `<div class="ingest"><div class="ih ok">✅ Bilik bazası: ${ingestedDocs.map(esc).join(", ")}</div></div>`
+      : "";
+    return;
+  }
+  const s = ingestState, qa = s.qa || 0, shown = s.shown || 0;
   const rows = [
     [1, "Yükləndi", ""],
     [2, "Bazaya yazıldı", s.chunks ? `${s.chunks} parça` : ""],
-    [3, "Ehtimal suallar çıxarıldı", (s.stage === "done" || s.stage === "extracted")
-        ? (qa > 0 ? `${qa} sual` : "tapılmadı") : ""],
+    [3, "Ehtimal suallar çıxarıldı", shown >= 3 ? (qa > 0 ? `${qa} sual` : "tapılmadı") : ""],
     [4, "Yaddaşa yazıldı", ""],
   ];
   const lis = rows.map(([n, label, extra]) => {
-    const cls = ingStep(n);
+    let cls = "";
+    if (n <= shown) cls = "done";
+    else if (n === shown + 1) cls = s.error ? "err" : "active";
     const ic = cls === "done" ? "✓" : cls === "active" ? `<span class="sp"></span>` : cls === "err" ? "✕" : "";
     return `<li class="${cls}"><span class="ic">${ic}</span>${label}` +
            (extra ? `<em>${esc(extra)}</em>` : "") + `</li>`;
   }).join("");
-  const head = err
+  const head = s.error
     ? `<div class="ih" style="color:var(--red)">📄 «${esc(s.title)}» — emal alınmadı</div>`
-    : done
+    : (s.done && shown >= 4)
       ? `<div class="ih ok">✅ «${esc(s.title)}» hazırdır — cavablar buna əsaslanacaq</div>`
       : `<div class="ih">📄 «${esc(s.title)}» emal olunur…</div>`;
   el.innerHTML = `<div class="ingest">${head}<ol>${lis}</ol></div>`;
@@ -683,33 +744,28 @@ function renderPost() {
   if (!el) return;
   if (!postState) { el.innerHTML = ""; return; }
   const s = postState;
-  const err = !!s.error;
-  const idx = _POST_ORDER.indexOf(s.stage);
-  const doneCount = idx < 0 ? 1 : idx + 1;   // ended→1 … done→7
-  const finished = s.stage === "done" && !err;
+  const shown = s.shown || 0;
+  const finished = s.done && shown >= 7 && !s.error;
   const deliverFail = finished && s.delivered === false;
   const lis = _POST_STEPS.map((label, i) => {
     const n = i + 1;
     let cls = "";
-    if (n <= doneCount) cls = "done";
-    else if (n === doneCount + 1) cls = err ? "err" : "active";
-    if (n === 7) {
-      if (deliverFail) { cls = "err"; label = "Çatdırılma alınmadı"; }
-      else if (cls === "err" && err) label = "Çatdırılma alınmadı";
-    }
+    if (n <= shown) cls = "done";
+    else if (n === shown + 1) cls = s.error ? "err" : "active";
+    if (n === 7 && deliverFail) { cls = "err"; label = "Çatdırılma alınmadı"; }
     const ic = cls === "done" ? "✓" : cls === "active" ? `<span class="sp"></span>` : cls === "err" ? "✕" : "";
-    const extra = (n === 7 && cls === "done") ? "email · Telegram" : "";
+    const extra = (n === 7 && cls === "done" && !deliverFail) ? "email · Telegram" : "";
     return `<li class="${cls}"><span class="ic">${ic}</span>${label}` +
            (extra ? `<em>${esc(extra)}</em>` : "") + `</li>`;
   }).join("");
-  const head = err
+  const head = s.error
     ? `<div class="ih" style="color:var(--red)">⚠️ «${esc(s.topic)}» — hesabat emalında xəta</div>`
     : deliverFail
       ? `<div class="ih" style="color:var(--amber)">🧾 «${esc(s.topic)}» — hesabat hazır, çatdırılma alınmadı</div>`
       : finished
         ? `<div class="ih ok">✅ «${esc(s.topic)}» — hesabat hazır və çatdırıldı</div>`
         : `<div class="ih">🧾 «${esc(s.topic)}» — hesabat hazırlanır…</div>`;
-  const link = (s.stage === "done" && s.id)
+  const link = (finished && s.id)
     ? `<button class="hback" style="margin:10px 0 0" data-report="${s.id}" data-topic="${esc(s.topic)}">Hesabata bax →</button>` : "";
   el.innerHTML = `<div class="ingest">${head}<ol>${lis}</ol>${link}</div>`;
   const lk = el.querySelector("[data-report]");
@@ -970,7 +1026,7 @@ async function poll() {
     statusLine();
     if (changed) render();
   } catch (e) {
-    if (String(e.message).includes("tapılmadı")) { meeting = null; stopStream(); }
+    if (String(e.message).includes("tapılmadı")) { meeting = null; stopStream(); stopMicCapture(); }
     setStatus("Server gözlənilir… (" + esc(e.message) + ")", false);
   }
 }

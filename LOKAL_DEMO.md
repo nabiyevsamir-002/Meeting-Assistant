@@ -73,11 +73,11 @@ mütləq deyil.
 ## 6. REAL Google Meet testi (künc paneli ilə)
 
 > Ekranın küncündə, Meet-in ÜSTÜNDƏ üzən pəncərə: sizə ünvanlanan sual + cavablar.
-> Ünvan: **http://localhost:8000/ui/panel.html**
+> Ünvan: **http://localhost:8000/ui/index.html**
 
 1. `.env`-də açarlar hazırdır (ElevenLabs, Azure, OpenAI, Claude).
 2. Terminal 1: `make run`
-3. Brauzer: http://localhost:8000/ui/panel.html → PDF yüklə → **▶ İclası başlat**
+3. Brauzer: http://localhost:8000/ui/index.html → PDF yüklə → **▶ İclası başlat**
 4. Terminal 2 — **iki agent variantı var**:
    - **Azure streaming (SÜRƏTLİ, ~2-3s, default):** `.venv/bin/python capture/agent_stream.py`
    - Köhnə ElevenLabs (parça, ~6-10s, fallback): `.venv/bin/python capture/agent.py`
@@ -97,7 +97,7 @@ Vacib: qulaqlıq taxsanız mikrofon qarşı tərəfi eşitməz — səs dinamikd
 
 ## Qeyd
 
-Chrome extension layihədən çıxarılıb (2026-07-23) — onun yerinə `panel.html`
+Chrome extension layihədən çıxarılıb (2026-07-23) — onun yerinə `index.html`
 (PiP künc paneli) gəldi. Prod server (visualkey.az) 2026-07-23-dən əlçatmazdır —
 hər şey lokal işləyir. Səs tutma: `capture/` agenti terminaldan əl ilə işə salınır
 (launchd deyil — mikrofon icazəsi məsələsi).

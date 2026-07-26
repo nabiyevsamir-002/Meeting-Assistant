@@ -388,37 +388,101 @@
   .q .conf::after { content:attr(data-p) "%"; position:absolute; width:28px; height:28px; border-radius:50%;
     background:#0c1024; display:grid; place-items:center; font-size:10px; font-weight:800; color:#dff3ff;
     font-variant-numeric:tabular-nums; }
+
+  /* ===== Sadə Fokus: düzülüş & vəziyyətlər ===== */
+  .brand { align-items:center; }
+  .util { margin-left:auto; display:flex; gap:8px; }
+  .ico { width:38px; height:38px; padding:0; border-radius:12px; font-size:16px; box-shadow:none;
+    background:rgba(255,255,255,.05); border:1px solid var(--line2); color:var(--text); }
+  .ico:hover { background:rgba(255,255,255,.1); transform:none; }
+  .ico.on { border-color:var(--lav); background:rgba(165,180,252,.16); }
+
+  #name { flex:1 1 140px; }
+  #startBtn.primary { flex:1 1 190px; padding:13px 18px; font-size:15px; }
+  #endBtn { display:none; }
+  body.live #startBtn { display:none; }
+  body.live #endBtn { display:inline-flex; flex:1; }
+
+  .drop { display:flex; align-items:center; gap:11px; margin-top:12px; padding:14px 15px;
+    border:1.5px dashed var(--line2); border-radius:14px; background:var(--field);
+    color:var(--muted); font-size:13px; cursor:pointer; transition:border-color .15s, background .15s; }
+  .drop:hover { border-color:var(--i1); color:var(--text); background:rgba(99,102,241,.06); }
+  .drop .di { font-size:20px; }
+  .drop b { color:var(--text); font-weight:700; }
+
+  .modes-wrap { display:none; margin-top:13px; }
+  body.live .modes-wrap { display:block; }
+  .modes-wrap .lbl { display:block; margin:0 0 6px 2px; }
+
+  .kbchip { margin-top:11px; font-size:12px; color:var(--green); background:rgba(61,220,151,.1);
+    border:1px solid rgba(61,220,151,.25); border-radius:11px; padding:9px 12px; }
+
+  /* İdle qarşılama (başlamamış — «Dinləyirəm» əvəzinə) */
+  .welcome { text-align:center; padding:40px 18px 34px; animation:fade .4s; }
+  .welcome .worb { width:64px; height:64px; border-radius:50%; margin:0 auto 16px;
+    background:radial-gradient(circle at 34% 28%,#d8e4ff 0,transparent 42%),conic-gradient(from 200deg,#6d6cf7,#5ac8fa,#b45cff,#6d6cf7);
+    box-shadow:0 0 0 1px rgba(255,255,255,.18), 0 10px 28px -6px rgba(120,110,255,.6);
+    animation:siriHue 7s linear infinite, siriPulse 3.2s ease-in-out infinite; }
+  .welcome .wh { font-size:19px; font-weight:800; letter-spacing:-.02em; }
+  .welcome .wp { font-size:13.5px; color:var(--muted); line-height:1.6; max-width:40ch; margin:8px auto 0; }
+
+  /* Dinləmə göstəricisi — nəbz (qulaqlıq ikonu YOX) */
+  .listening .earpulse { width:44px; height:44px; border-radius:50%; margin:0 auto;
+    background:radial-gradient(circle at 40% 35%, #8ab4ff, #6a5cff 60%, transparent 74%);
+    box-shadow:0 0 0 0 rgba(122,108,255,.5); animation:earpulse 1.8s ease-out infinite; }
+  @keyframes earpulse { 0%{box-shadow:0 0 0 0 rgba(122,108,255,.5);} 70%{box-shadow:0 0 0 15px rgba(122,108,255,0);} 100%{box-shadow:0 0 0 0 rgba(122,108,255,0);} }
+
+  /* İrəliləyiş halqası (hesabat + yükləmə) */
+  .progress { display:flex; align-items:center; gap:16px; background:var(--card); border:1px solid var(--line);
+    border-radius:var(--radius); padding:15px 16px; box-shadow:var(--shadow), var(--spec);
+    backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); margin-bottom:12px; animation:slidein .25s ease; }
+  #ingest .progress { margin:12px 0 0; }
+  .pring { --p:0; width:58px; height:58px; border-radius:50%; flex:none; display:grid; place-items:center;
+    background:conic-gradient(var(--cyan) calc(var(--p)*1%), rgba(255,255,255,.12) 0); transition:background .45s ease; }
+  .pring::after { content:attr(data-p) "%"; width:44px; height:44px; border-radius:50%; background:var(--card-solid);
+    backdrop-filter:var(--blur); display:grid; place-items:center; font-size:12.5px; font-weight:800;
+    color:var(--text); font-variant-numeric:tabular-nums; }
+  .progress.ok .pring { background:conic-gradient(var(--green) 0 100%); }
+  .progress.err .pring { background:conic-gradient(var(--red) 0 100%); }
+  .pinfo { min-width:0; }
+  .pinfo .pt { font-size:14.5px; font-weight:700; letter-spacing:-.01em; }
+  .pinfo .ps { font-size:12.5px; color:var(--muted); margin-top:3px; }
+  .pinfo .hback { margin-top:9px; }
 </style>
 </head>
 <body>
   <div class="brand">
     <div class="siri" aria-hidden="true"></div>
-    <div>
+    <div class="bt">
       <h1>Meet Köməkçisi</h1>
       <p class="sub">Canlı transkript · suallar · hazır cavablar</p>
     </div>
+    <div class="util">
+      <button id="notifyBtn" class="ico" title="Bildiriş: sizə sual veriləndə xəbər verir">🔔</button>
+      <button id="historyBtn" class="ico" title="Keçmiş iclaslar və hesabatlar">🕘</button>
+      <button id="pipBtn" class="ico" title="Üzən pəncərə (Meet üstündə)">📌</button>
+    </div>
   </div>
 
-  <div class="card">
-    <label class="lbl" for="name">Adınız (sizə ünvanlanan suallar vurğulanır)</label>
-    <div class="row" style="margin-bottom:11px">
-      <input type="text" id="name" value="Samir" title="Suallar bu ada görə vurğulanır">
-      <button id="startBtn">▶ Başlat</button>
-      <button id="endBtn" class="danger" title="Cari iclası bitir (hesabat yaranır)">⏹ Bitir</button>
-      <button id="pipBtn" class="ghost" title="Paneli Meet-in üstündə üzən pəncərəyə çıxar">📌 Üzət</button>
-      <button id="notifyBtn" class="ghost" title="Sizə sual veriləndə masaüstü bildiriş">🔔 Bildiriş</button>
-      <button id="historyBtn" class="ghost" title="Keçmiş iclaslar, xülasələr və tapşırıqlar">🗂 Tarixçə</button>
-    </div>
-    <label class="lbl">Cavab rejimi</label>
-    <div class="modes" id="modes">
-      <button class="mode" data-mode="all">Hamısı · adım vurğulanır</button>
-      <button class="mode" data-mode="directed">Yalnız adım çəkiləndə</button>
-    </div>
-    <label class="lbl" for="pdf">Bilik bazası — faylı seçin, avtomatik yüklənir <span class="dz-hint">· bura da ata bilərsiniz</span></label>
+  <div class="card setup">
     <div class="row">
-      <input type="file" id="pdf" accept=".pdf,.txt">
+      <input type="text" id="name" placeholder="Adınız" value="Samir" title="Sizə ünvanlanan suallar bu ada görə vurğulanır">
+      <button id="startBtn" class="primary">▶ İclası başlat</button>
+      <button id="endBtn" class="danger" title="Cari iclası bitir (hesabat yaranır)">⏹ İclası bitir</button>
     </div>
+    <label for="pdf" class="drop">
+      <input type="file" id="pdf" accept=".pdf,.txt" hidden>
+      <span class="di">📄</span>
+      <span><b>Bilik bazası</b> — sənədi seçin və ya bura atın</span>
+    </label>
     <div id="ingest"></div>
+    <div class="modes-wrap">
+      <span class="lbl">Cavab rejimi</span>
+      <div class="modes" id="modes">
+        <button class="mode" data-mode="all">Hamısı · adım vurğulanır</button>
+        <button class="mode" data-mode="directed">Yalnız adım çəkiləndə</button>
+      </div>
+    </div>
   </div>
 
   <div class="card status" id="status"><span class="dot" id="dot"></span>Server gözlənilir…</div>
@@ -477,8 +541,11 @@ let postAnim = null, ingestAnim = null;    // mərhələ animatorları
 let ingestedDocs = [];                     // bilik bazasına yüklənmiş sənədlər (davamlı təsdiq)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function setLive(on) { document.body.classList.toggle("live", !!on); }
+
 function attachMeeting(m) {
   meeting = m;
+  setLive(true);
   lastId = 0;
   items.clear();
   transcript = [];
@@ -760,37 +827,29 @@ async function pollIngest(docId) {
   }
 }
 
+const _INGEST_STEPS = ["Yüklənir…", "Bazaya yazılır…", "Ehtimal suallar çıxarılır…", "Yaddaşa yazılır…"];
 function renderIngest() {
   const el = $("ingest");
   if (!el) return;
   if (!ingestState) {
     // Davamlı təsdiq: yüklənmiş sənədlər bilik bazasındadır (native "fayl seçilmədi" mətnini əvəz edir)
     el.innerHTML = ingestedDocs.length
-      ? `<div class="ingest"><div class="ih ok">✅ Bilik bazası: ${ingestedDocs.map(esc).join(", ")}</div></div>`
-      : "";
+      ? `<div class="kbchip">✅ Bilik bazası: ${ingestedDocs.map(esc).join(", ")}</div>` : "";
     return;
   }
   const s = ingestState, qa = s.qa || 0, shown = s.shown || 0;
-  const rows = [
-    [1, "Yükləndi", ""],
-    [2, "Bazaya yazıldı", s.chunks ? `${s.chunks} parça` : ""],
-    [3, "Ehtimal suallar çıxarıldı", shown >= 3 ? (qa > 0 ? `${qa} sual` : "tapılmadı") : ""],
-    [4, "Yaddaşa yazıldı", ""],
-  ];
-  const lis = rows.map(([n, label, extra]) => {
-    let cls = "";
-    if (n <= shown) cls = "done";
-    else if (n === shown + 1) cls = s.error ? "err" : "active";
-    const ic = cls === "done" ? "✓" : cls === "active" ? `<span class="sp"></span>` : cls === "err" ? "✕" : "";
-    return `<li class="${cls}"><span class="ic">${ic}</span>${label}` +
-           (extra ? `<em>${esc(extra)}</em>` : "") + `</li>`;
-  }).join("");
-  const head = s.error
-    ? `<div class="ih" style="color:var(--red)">📄 «${esc(s.title)}» — emal alınmadı</div>`
-    : (s.done && shown >= 4)
-      ? `<div class="ih ok">✅ «${esc(s.title)}» hazırdır — cavablar buna əsaslanacaq</div>`
-      : `<div class="ih">📄 «${esc(s.title)}» emal olunur…</div>`;
-  el.innerHTML = `<div class="ingest">${head}<ol>${lis}</ol></div>`;
+  const finished = s.done && shown >= 4 && !s.error;
+  const pct = finished ? 100 : Math.round(Math.min(shown, 4) / 4 * 100);
+  const cur = _INGEST_STEPS[Math.min(shown, _INGEST_STEPS.length - 1)] || "Emal olunur…";
+  const cls = s.error ? "err" : finished ? "ok" : "";
+  const title = s.error ? `📄 «${esc(s.title)}» — emal alınmadı`
+    : finished ? `✅ «${esc(s.title)}» hazırdır`
+    : `📄 «${esc(s.title)}» emal olunur…`;
+  const sub = s.error ? "Mətn çıxarıla bilmədi"
+    : finished ? (qa > 0 ? `${qa} ehtimal sual hazırlandı` : "cavablar buna əsaslanacaq")
+    : cur;
+  el.innerHTML = `<div class="progress ${cls}"><div class="pring" data-p="${pct}" style="--p:${pct}"></div>` +
+    `<div class="pinfo"><div class="pt">${title}</div><div class="ps">${esc(sub)}</div></div></div>`;
 }
 
 /* --- İclas-sonrası pipeline stepper («Bitir») --- */
@@ -812,27 +871,21 @@ function renderPost() {
   const shown = s.shown || 0;
   const finished = s.done && shown >= 7 && !s.error;
   const deliverFail = finished && s.delivered === false;
-  const lis = _POST_STEPS.map((label, i) => {
-    const n = i + 1;
-    let cls = "";
-    if (n <= shown) cls = "done";
-    else if (n === shown + 1) cls = s.error ? "err" : "active";
-    if (n === 7 && deliverFail) { cls = "err"; label = "Çatdırılma alınmadı"; }
-    const ic = cls === "done" ? "✓" : cls === "active" ? `<span class="sp"></span>` : cls === "err" ? "✕" : "";
-    const extra = (n === 7 && cls === "done" && !deliverFail) ? "email · Telegram" : "";
-    return `<li class="${cls}"><span class="ic">${ic}</span>${label}` +
-           (extra ? `<em>${esc(extra)}</em>` : "") + `</li>`;
-  }).join("");
-  const head = s.error
-    ? `<div class="ih" style="color:var(--red)">⚠️ «${esc(s.topic)}» — hesabat emalında xəta</div>`
-    : deliverFail
-      ? `<div class="ih" style="color:var(--amber)">🧾 «${esc(s.topic)}» — hesabat hazır, çatdırılma alınmadı</div>`
-      : finished
-        ? `<div class="ih ok">✅ «${esc(s.topic)}» — hesabat hazır və çatdırıldı</div>`
-        : `<div class="ih">🧾 «${esc(s.topic)}» — hesabat hazırlanır…</div>`;
+  const pct = finished ? 100 : Math.round(Math.min(shown, 7) / 7 * 100);
+  const cur = _POST_STEPS[Math.min(shown, _POST_STEPS.length - 1)] || "Hazırlanır…";
+  const cls = (s.error || deliverFail) ? "err" : finished ? "ok" : "";
+  const title = s.error ? "⚠️ Hesabat emalında xəta"
+    : deliverFail ? "🧾 Hesabat hazır — çatdırılma alınmadı"
+    : finished ? "✅ Hesabat hazır və çatdırıldı"
+    : "🧾 Hesabat hazırlanır…";
+  const sub = s.error ? "Yenidən cəhd edin"
+    : deliverFail ? "email/Telegram göndərilmədi"
+    : finished ? "email · Telegram"
+    : cur;
   const link = (finished && s.id)
-    ? `<button class="hback" style="margin:10px 0 0" data-report="${s.id}" data-topic="${esc(s.topic)}">Hesabata bax →</button>` : "";
-  el.innerHTML = `<div class="ingest">${head}<ol>${lis}</ol>${link}</div>`;
+    ? `<button class="hback" data-report="${s.id}" data-topic="${esc(s.topic)}">Hesabata bax →</button>` : "";
+  el.innerHTML = `<div class="progress ${cls}"><div class="pring" data-p="${pct}" style="--p:${pct}"></div>` +
+    `<div class="pinfo"><div class="pt">${title}</div><div class="ps">${esc(sub)}</div>${link}</div></div>`;
   const lk = el.querySelector("[data-report]");
   if (lk) lk.onclick = () => { historyOpen = true; openReport(lk.dataset.report, lk.dataset.topic); };
 }
@@ -842,7 +895,8 @@ function updateNotifyBtn() {
   const b = $("notifyBtn");
   if (!b) return;
   b.classList.toggle("on", notifyOn);
-  b.textContent = notifyOn ? "🔔 Bildiriş: açıq" : "🔔 Bildiriş";
+  b.title = notifyOn ? "Bildiriş açıqdır — sizə sual veriləndə xəbər verir"
+                     : "Bildiriş: sizə sual veriləndə xəbər verir";
 }
 function maybeNotify(q) {
   if (!notifyOn || !("Notification" in window) || Notification.permission !== "granted") return;
@@ -1114,10 +1168,11 @@ async function poll() {
     statusLine();
     if (changed) render();
   } catch (e) {
-    if (String(e.message).includes("tapılmadı")) { meeting = null; stopStream(); stopCapture(); }
+    if (String(e.message).includes("tapılmadı")) { meeting = null; stopStream(); stopCapture(); render(); }
     setStatus("Server gözlənilir… (" + esc(e.message) + ")", false);
   }
 }
+render();          // başlanğıcda sakit qarşılama (idle) göstərilir
 setInterval(poll, 2000);
 poll();
 
@@ -1183,6 +1238,16 @@ function render() {
   const stack = $("stack") || pipDoc?.getElementById("stack");
   if (!stack) return;
 
+  // İdle (iclas getmir) — sakit qarşılama, «Dinləyirəm» yox
+  if (!meeting) {
+    setLive(false);
+    stack.innerHTML =
+      `<div class="welcome"><div class="worb"></div>` +
+      `<div class="wh">Başlamağa hazıram</div>` +
+      `<div class="wp">«▶ İclası başlat» basın — iclas səsi, aşkarlanan suallar və hazır cavablar burada canlı görünəcək.</div></div>`;
+    return;
+  }
+
   // Canlı zolaq
   const livebar =
     `<div class="livebar">` +
@@ -1211,7 +1276,7 @@ function render() {
     : [...all.filter((it) => it.directed), ...all.filter((it) => !it.directed)];
   const cards = ordered.length
     ? ordered.map(cardHtml).join("")
-    : `<div class="listening"><div class="ear">🎧</div>` +
+    : `<div class="listening"><div class="earpulse"></div>` +
       `<div class="lt">Dinləyirəm<span class="dots"><i></i><i></i><i></i></span></div>` +
       `<div class="ls">İclasda sual veriləndə cavab burada dərhal görünəcək.</div></div>`;
   const qaCol =

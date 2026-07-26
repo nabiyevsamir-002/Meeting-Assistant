@@ -471,7 +471,8 @@ let historyList = [];        // keçmiş iclaslar
 let historyDetail = null;    // baxılan hesabat detalı
 let historySearch = "";      // tarixçə axtarış sözü
 let token = localStorage.getItem("token") || null;  // prod giriş token-i
-let micStream = null, capturing = false;   // brauzer mikrofon tutması
+let captureStream = null, capturing = false;  // sekme səsi tutması
+let vadTimer = null, vadCtx = null;           // VAD (pauzada kəsmə)
 let postAnim = null, ingestAnim = null;    // mərhələ animatorları
 let ingestedDocs = [];                     // bilik bazasına yüklənmiş sənədlər (davamlı təsdiq)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -527,53 +528,111 @@ function pickMime() {
   for (const m of opts) { try { if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; } catch (_) {} }
   return "";
 }
-async function startMicCapture(id) {
-  if (capturing) return;
-  if (!navigator.mediaDevices || !window.MediaRecorder) {
-    setStatus("🎙 Bu brauzer mikrofon tutmasını dəstəkləmir", false); return;
+// ① Meet sekmesinin səsini tuturuq (mikrofonu YOX) — beləliklə yalnız qarşı tərəf
+//    eşidilir, siz yox; həm də səs təmiz rəqəmsaldır (otaq küyü/əks-səda olmadan).
+async function acquireCaptureStream() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia || !window.MediaRecorder) {
+    setStatus("🎧 Bu brauzer sekme səsi tutmasını dəstəkləmir — Chrome/Edge işlədin", false);
+    return false;
   }
   try {
-    // Spiker səsini (qarşı tərəfi) də tutmaq üçün exo ləğvi/səs-küy azaltma SÖNDÜRÜLÜR
-    micStream = await navigator.mediaDevices.getUserMedia({
+    // Chrome sekme səsini yalnız video ilə birlikdə təklif edir — videonu alıb sonra atırıq
+    const s = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
     });
+    const at = s.getAudioTracks();
+    if (!at.length) {
+      s.getTracks().forEach((t) => t.stop());
+      setStatus("🔇 Səs paylaşılmadı — yenidən «Başlat» basıb Meet sekmesini seçin və «Səsi də paylaş»-ı işarələyin", false);
+      return false;
+    }
+    s.getVideoTracks().forEach((t) => t.stop());   // yalnız səs lazımdır
+    captureStream = new MediaStream(at);
+    at[0].addEventListener("ended", () => stopCapture());  // istifadəçi paylaşımı dayandırsa
+    return true;
   } catch (e) {
-    setStatus("🎙 Mikrofon icazəsi verilmədi — brauzer ünvan zolağındakı 🔒-dan icazə verin", false);
-    return;
+    setStatus("🎧 Səs mənbəyi seçilmədi — iclas başladı, amma səs tutulmur", false);
+    return false;
   }
+}
+
+function uploadChunk(id, blob) {
+  if (!blob || blob.size < 1400 || !meeting || meeting.id !== id) return;
+  const fd = new FormData();
+  fd.append("file", blob, "chunk.webm");   // endpoint sahə adı: file
+  fetch(`/api/meetings/${id}/segments/audio`, {
+    method: "POST", headers: token ? { "Authorization": "Bearer " + token } : {}, body: fd,
+  }).catch(() => { /* şəbəkə xətası — növbəti parça davam edir */ });
+}
+
+// ② Pauzada kəsmə (VAD): adam susanda parçanı bağlayırıq → hər parça TAM cümlə
+//    olur, söz ortadan bölünmür. VAD qurula bilməsə 8s-lik sadə rejimə keçir.
+function beginRecording(id) {
+  if (capturing || !captureStream) return;
   capturing = true;
   const mime = pickMime();
-  const recordChunk = () => new Promise((resolve) => {
-    if (!capturing || !micStream) { resolve(); return; }
-    let rec;
-    try { rec = mime ? new MediaRecorder(micStream, { mimeType: mime }) : new MediaRecorder(micStream); }
-    catch (_) { resolve(); return; }
-    const parts = [];
-    rec.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
-    rec.onstop = async () => {
-      const blob = new Blob(parts, { type: rec.mimeType || "audio/webm" });
-      if (blob.size > 1400 && meeting && meeting.id === id) {
-        const fd = new FormData();
-        fd.append("file", blob, "chunk.webm");   // endpoint sahə adı: file
-        try {
-          await fetch(`/api/meetings/${id}/segments/audio`, {
-            method: "POST",
-            headers: token ? { "Authorization": "Bearer " + token } : {},
-            body: fd,
-          });
-        } catch (_) { /* şəbəkə xətası — növbəti parça davam edir */ }
-      }
-      resolve();
-    };
-    try { rec.start(); } catch (_) { resolve(); return; }
-    // Hər parça TAM webm olsun deyə hər dəfə YENİ recorder (5s)
-    setTimeout(() => { try { if (rec.state !== "inactive") rec.stop(); } catch (_) {} }, 5000);
-  });
-  (async () => { while (capturing) { await recordChunk(); } })();
+  const mk = () => { try { return mime ? new MediaRecorder(captureStream, { mimeType: mime }) : new MediaRecorder(captureStream); } catch (_) { return null; } };
+
+  let analyser = null, data = null;
+  try {
+    vadCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = vadCtx.createMediaStreamSource(captureStream);
+    analyser = vadCtx.createAnalyser();
+    analyser.fftSize = 512;
+    src.connect(analyser);
+    data = new Uint8Array(analyser.fftSize);
+  } catch (_) { analyser = null; }
+
+  if (!analyser) {   // ehtiyat: sadə 8s parçalar (5s-dən böyük → daha az kəsim)
+    const loop = () => new Promise((resolve) => {
+      const rec = mk(); if (!rec) { resolve(); return; }
+      const p = [];
+      rec.ondataavailable = (e) => { if (e.data && e.data.size) p.push(e.data); };
+      rec.onstop = () => { uploadChunk(id, new Blob(p, { type: rec.mimeType || "audio/webm" })); resolve(); };
+      try { rec.start(); } catch (_) { resolve(); return; }
+      setTimeout(() => { try { if (rec.state !== "inactive") rec.stop(); } catch (_) {} }, 8000);
+    });
+    (async () => { while (capturing) { await loop(); } })();
+    return;
+  }
+
+  const ON = 0.012, SILENCE_MS = 800, MIN_MS = 900, MAX_MS = 14000;
+  let rec = null, silenceStart = 0, chunkStart = 0;
+  const startRec = () => {
+    const r = mk(); if (!r) { rec = null; return; }
+    const p = [];
+    r.ondataavailable = (e) => { if (e.data && e.data.size) p.push(e.data); };
+    r.onstop = () => { uploadChunk(id, new Blob(p, { type: r.mimeType || "audio/webm" })); };
+    try { r.start(); chunkStart = performance.now(); rec = r; } catch (_) { rec = null; }
+  };
+  const stopRec = () => { const r = rec; rec = null; try { if (r && r.state !== "inactive") r.stop(); } catch (_) {} };
+
+  const tick = () => {
+    if (!capturing) { stopRec(); try { vadCtx && vadCtx.close(); } catch (_) {} vadCtx = null; return; }
+    analyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
+    const rms = Math.sqrt(sum / data.length);
+    const now = performance.now();
+    if (rms > ON) {
+      silenceStart = 0;
+      if (!rec) startRec();                                          // nitq başladı → yeni parça
+      else if (now - chunkStart > MAX_MS) { stopRec(); startRec(); } // çox uzun → böl
+    } else if (rec) {
+      if (!silenceStart) silenceStart = now;
+      if (now - silenceStart > SILENCE_MS && now - chunkStart > MIN_MS) stopRec();  // cümlə bitdi
+    }
+    vadTimer = setTimeout(tick, 100);
+  };
+  tick();
 }
-function stopMicCapture() {
+
+function stopCapture() {
   capturing = false;
-  if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+  if (vadTimer) { clearTimeout(vadTimer); vadTimer = null; }
+  if (vadCtx) { try { vadCtx.close(); } catch (_) {} vadCtx = null; }
+  if (captureStream) { captureStream.getTracks().forEach((t) => t.stop()); captureStream = null; }
 }
 
 /* --- Mərhələ animatoru: addımları həmişə bir-bir, hamar sürətlə doldurur
@@ -597,10 +656,13 @@ async function findLive() {
 }
 
 $("startBtn").onclick = async () => {
+  // ① Səs mənbəyini DƏRHAL al (istifadəçi jesti təzə ikən): Meet sekmesinin səsi
+  const gotAudio = await acquireCaptureStream();
   try {
     let m = await findLive();
     if (m) {
-      attachMeeting(m); startStream(); startMicCapture(m.id);
+      attachMeeting(m); startStream();
+      if (gotAudio) beginRecording(m.id);
       setStatus(`Mövcud canlı iclasa qoşuldu: <b>${esc(m.topic)}</b> — təzəsini istəyirsinizsə əvvəl ⏹ Bitir basın`, true);
       return;
     }
@@ -609,8 +671,11 @@ $("startBtn").onclick = async () => {
       body: JSON.stringify({ topic: "Meet testi", user_name: $("name").value.trim() || null }),
     });
     m = await api(`/api/meetings/${m.id}/start`, { method: "POST" });
-    attachMeeting(m); startStream(); startMicCapture(m.id);
-    setStatus(`<b>${esc(m.topic)}</b> canlıdır 🎙 — mikrofon dinləyir. Onlayn iclasda qarşı tərəf də eşidilsin deyə <b>spikerlə</b> (qulaqlıqsız) işləyin.`, true);
+    attachMeeting(m); startStream();
+    if (gotAudio) beginRecording(m.id);
+    setStatus(gotAudio
+      ? `<b>${esc(m.topic)}</b> canlıdır 🎧 — Meet sekmesinin səsi dinlənilir (yalnız qarşı tərəf, siz yox).`
+      : `<b>${esc(m.topic)}</b> canlıdır, amma səs paylaşılmadı. «Bitir» edin, sonra «Başlat» basıb Meet sekmesini seçin və «Səsi də paylaş»-ı işarələyin.`, gotAudio);
   } catch (e) { setStatus("Başlatma xətası: " + esc(e.message), false); }
 };
 
@@ -618,7 +683,7 @@ $("endBtn").onclick = async () => {
   if (!meeting) { setStatus("Bitiriləcək iclas yoxdur", false); return; }
   const id = meeting.id, topic = meeting.topic;
   stopStream();
-  stopMicCapture();
+  stopCapture();
   // shown = göstərilən tamamlanmış addım; target = son çatdırılma addımına qədər (6);
   // done olanda pacer 7-ci addımı da doldurur. Beləliklə həmişə 1→7 hamar gedir.
   postState = { id, topic, shown: 0, target: 6, total: 7, done: false, delivered: null, error: false };
@@ -943,10 +1008,33 @@ applyModeButtons();
   });
 })();
 
+// ③ Yumşaq ad uyğunluğu: STT adı bir az səhv yazsa da tutur (Samir/Samirə/Samil)
+function lev(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++)
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[n];
+}
 function isDirected(p) {
   if (p.directed_to_user) return true;
-  const n = norm($("name").value);
-  return n.length > 1 && norm(p.question).includes(n);
+  const name = norm($("name").value);
+  if (name.length < 2) return false;
+  const q = norm(p.question);
+  if (q.includes(name)) return true;
+  const stem = name.slice(0, Math.max(4, name.length - 1));
+  const tol = name.length <= 5 ? 1 : 2;
+  for (const w of q.split(/[^\p{L}]+/u)) {
+    if (w.length < 3) continue;
+    if (w.startsWith(stem) || (stem.startsWith(w) && w.length >= 4)) return true;
+    if (lev(w, name) <= tol) return true;
+  }
+  return false;
 }
 
 // Bir feed hadisəsini emal edir. lastId ilə dublikatı atır. true = dəyişiklik oldu.
@@ -1026,7 +1114,7 @@ async function poll() {
     statusLine();
     if (changed) render();
   } catch (e) {
-    if (String(e.message).includes("tapılmadı")) { meeting = null; stopStream(); stopMicCapture(); }
+    if (String(e.message).includes("tapılmadı")) { meeting = null; stopStream(); stopCapture(); }
     setStatus("Server gözlənilir… (" + esc(e.message) + ")", false);
   }
 }

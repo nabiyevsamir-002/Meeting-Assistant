@@ -35,6 +35,13 @@ async def ingest_file(file: UploadFile) -> IngestResult:
         # kilidləməmək üçün thread hovuzunda icra olunur
         if name.lower().endswith(".pdf"):
             content = extract_pdf_text(data)
+            # Skan/şəkil PDF-lərdə mətn qatı olmur → aydın izah veririk
+            if len((content or "").strip()) < 40:
+                raise HTTPException(
+                    status_code=422,
+                    detail=("PDF-də oxunacaq mətn tapılmadı — çox güman skan/şəkil "
+                            "əsaslı PDF-dir. Mətni seçilə (kopyalana) bilən PDF yükləyin."),
+                )
             source_type = "pdf"
         else:
             content = data.decode("utf-8", errors="replace")

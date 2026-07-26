@@ -114,7 +114,7 @@ class Settings(BaseSettings):
     answer_only_directed: bool = False
     chunk_size: int = 800              # sənəd parçalama ölçüsü (simvol)
     chunk_overlap: int = 150           # parçalar arası üst-üstə düşmə
-    search_top_k: int = 4              # kontekst axtarışında nəticə sayı
+    search_top_k: int = 6              # kontekst axtarışında nəticə sayı
     language: str = "az"
 
     # --- Sürət/dəqiqlik optimizasiyaları (A, C, D, E, J) ---

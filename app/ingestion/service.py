@@ -103,10 +103,43 @@ def search_context(query: str, top_k: int | None = None) -> list[dict]:
 
 
 def extract_pdf_text(data: bytes) -> str:
-    """Yüklənmiş PDF faylından mətn çıxarır (lokal ingest üçün)."""
+    """Yüklənmiş PDF-dən mətn çıxarır.
+
+    Əvvəlcə pdfplumber (tərtibat/cədvəlləri daha yaxşı saxlayır, sütunları
+    qarışdırmır), az mətn versə pypdf-ə keçir. Skan/şəkil PDF-lərdə mətn qatı
+    olmadığı üçün nəticə boş qala bilər — çağıran yer bunu yoxlayır.
+    """
     import io
 
-    from pypdf import PdfReader
+    text = ""
+    # 1) pdfplumber — mürəkkəb tərtibatlar üçün daha keyfiyyətli
+    try:
+        import pdfplumber
 
-    reader = PdfReader(io.BytesIO(data))
-    return "\n".join(page.extract_text() or "" for page in reader.pages)
+        parts = []
+        with pdfplumber.open(io.BytesIO(data)) as pdf:
+            for page in pdf.pages:
+                parts.append(page.extract_text() or "")
+                # Cədvəlləri sətir kimi əlavə et (semantik axtarış üçün faydalı)
+                for tbl in (page.extract_tables() or []):
+                    for row in tbl:
+                        cells = [c for c in (row or []) if c]
+                        if cells:
+                            parts.append(" | ".join(cells))
+        text = "\n".join(p for p in parts if p).strip()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pdfplumber çıxarışı alınmadı, pypdf-ə keçilir: %s", exc)
+
+    # 2) Ehtiyat: pdfplumber az mətn veribsə pypdf sınanır
+    if len(text) < 40:
+        try:
+            from pypdf import PdfReader
+
+            reader = PdfReader(io.BytesIO(data))
+            alt = "\n".join(page.extract_text() or "" for page in reader.pages).strip()
+            if len(alt) > len(text):
+                text = alt
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("pypdf çıxarışı da alınmadı: %s", exc)
+
+    return text

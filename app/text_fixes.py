@@ -19,8 +19,20 @@ _GLOSSARY: list[tuple[str, str]] = [
     (r"\bes[ -]?kyu[ -]?el\b", "SQL"),
     (r"\bca[vw]a[ -]?skript\b", "JavaScript"),
     (r"\bbek[ -]?end\b", "backend"),
+    (r"\bbeken[dt]\b", "backend"),
     (r"\bfront[ -]?end\b", "frontend"),
     (r"\bendp[oa]int\b", "endpoint"),
+    (r"\bkl[ao]ud\b", "cloud"),
+    (r"\bdedlay?n\b", "deadline"),
+    (r"\bdeyta[ -]?beyz\b", "database"),
+    (r"\bdeyta[ -]?beys\b", "database"),
+    (r"\bfreym[ -]?vork\b", "framework"),
+    (r"\bstart[ -]?ap\b", "startup"),
+    (r"\bdok[k]er\b", "Docker"),
+    (r"\bgit[ -]?hab\b", "GitHub"),
+    (r"\bveb[ -]?huk\b", "webhook"),
+    (r"\bto[uy]ken\b", "token"),
+    (r"\bser[vw]er\b", "server"),
 ]
 _GLOSSARY_COMPILED = [(re.compile(p, re.IGNORECASE), r) for p, r in _GLOSSARY]
 

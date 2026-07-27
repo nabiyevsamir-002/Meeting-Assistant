@@ -130,7 +130,7 @@ class Settings(BaseSettings):
     # DƏRHAL verilir (0 LLM çağırışı). Uyğunluq zəifdirsə adi RAG yoluna düşür.
     prepared_qa_enabled: bool = True
     prepared_qa_count: int = 12          # neçə ehtimal Q&A hazırlansın
-    prepared_qa_threshold: float = 0.86  # uyğunluq həddi (konservativ = təhlükəsiz)
+    prepared_qa_threshold: float = 0.86  # uyğunluq həddi (konservativ — az sualı embeddingi zəif)
 
     def data_path(self, *parts: str) -> Path:
         """data/ qovluğu altında yol qurur və qovluğun mövcudluğunu təmin edir."""

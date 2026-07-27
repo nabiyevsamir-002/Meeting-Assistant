@@ -173,10 +173,10 @@ def process_text_segment(meeting: Meeting, seg_in: SegmentIn) -> TranscriptSegme
         from concurrent.futures import ThreadPoolExecutor
 
         with ThreadPoolExecutor(max_workers=min(3, len(to_answer))) as ex:
-            list(ex.map(lambda qq: _answer_question(meeting, rt, qq), to_answer))
+            list(ex.map(lambda qq: _answer_question_safe(meeting, rt, qq), to_answer))
     else:
         for qq in to_answer:
-            _answer_question(meeting, rt, qq)
+            _answer_question_safe(meeting, rt, qq)
 
     # 5) Hər N seqmentdən bir sürətli xülasə
     if rt.segment_count % settings.quick_summary_every == 0:
@@ -199,6 +199,55 @@ def _is_directed(q, user_name: str) -> bool:
         return True
     name = (user_name or "").strip().lower()
     return len(name) > 1 and name in q.question.lower()
+
+
+def _build_context(hits: list[dict], max_chars: int = 3600) -> str:
+    """Axtarış nəticələrini cavab üçün kontekstə çevirir.
+
+    DƏQİQLİK: əvvəllər hər parçanı 200 simvola KƏSİRDİK (`h["text"][:200]`).
+    Parçalar ~800 simvoldur, ona görə bu, mətnin dörddə üçünü — çox vaxt məhz
+    faktı (rəqəm, faiz, məbləğ) — ATIRDI və model əlində məlumat olmadığı üçün
+    «sənəddə yoxdur» deyirdi. İndi parçanı TAM veririk; ümumi həcm yalnız
+    `max_chars` ilə məhdudlaşır (gecikmə idarə olunsun deyə) və hər blokun
+    başında mənbə adı yazılır ki, model əsaslandırmanı düzgün etsin.
+    """
+    parts: list[str] = []
+    total = 0
+    for h in hits:
+        text = (h.get("text") or "").strip()
+        if not text:
+            continue
+        title = h.get("title")
+        block = f"[{title}]\n{text}" if title else text
+        if parts and total + len(block) > max_chars:
+            break  # ən azı bir tam blok saxlanılır, sonra həddi aşmırıq
+        parts.append(block)
+        total += len(block)
+    return "\n---\n".join(parts)
+
+
+def _answer_question_safe(meeting: Meeting, rt: MeetingRuntime, question: str) -> None:
+    """`_answer_question`-ı xəta-təhlükəsiz sarğıda çağırır.
+
+    ETİBARLILIQ: sürətli yolda `search_context` (embedding/vektor şəbəkə çağırışı)
+    əvvəllər try/except-siz idi. Keçici xəta (embedding API/Qdrant timeout) baş
+    verəndə cavab hazırlanması yarıda qırılır, AMMA sual kartı artıq göndərilib —
+    nəticədə kart əbədi «Cavab hazırlanır…» vəziyyətində ilişir və dedup 60 saniyə
+    təkrarı bloklayır. Ona görə: (1) istənilən xəta tutulur, (2) kart ilişməsin
+    deyə nəzakətli yekun cavab göndərilir, (3) dedup açarı silinir ki, növbəti
+    (STT tez-tez təkrarlayan) seqment eyni sualı yenidən cəhd edə bilsin.
+    """
+    try:
+        _answer_question(meeting, rt, question)
+    except Exception as exc:  # noqa: BLE001 — bir sualın xətası digərlərini/axını dayandırmasın
+        logger.warning("Suala cavab hazırlana bilmədi «%s»: %s", question[:60], exc)
+        repo.add_feed_event(meeting.id, "answer", {
+            "question": question,
+            "text": "Bu suala indi cavab hazırlaya bilmədim — bir azdan yenidən yoxlanılır.",
+            "done": True, "based_on_context": False, "source": None,
+        })
+        # Dedup açarını sil → eyni sual sonrakı seqmentdə yenidən cəhd olunsun
+        rt.answered.pop(_normalize_q(question), None)
 
 
 def _answer_question(meeting: Meeting, rt: MeetingRuntime, question: str) -> None:
@@ -232,7 +281,7 @@ def _answer_question(meeting: Meeting, rt: MeetingRuntime, question: str) -> Non
         from app.ingestion.service import search_context
 
         hits = search_context(question)
-        context_used = "\n".join(h["text"][:200] for h in hits)
+        context_used = _build_context(hits)  # TAM parça mətni (kəsilməmiş)
         # D: cavabın hansı sənədə əsaslandığını göstərmək üçün ən yaxın mənbə
         source = hits[0].get("title") if hits else None
         _stream_answer(meeting, question, context_used, source=source)
@@ -258,7 +307,7 @@ def _answer_question(meeting: Meeting, rt: MeetingRuntime, question: str) -> Non
             from app.ingestion.service import search_context
 
             hits = search_context(question)
-            context_used = "\n".join(h["text"][:200] for h in hits)
+            context_used = _build_context(hits)  # TAM parça mətni (kəsilməmiş)
             draft = llm.complete(
                 f"Sual: {question}\nKontekst: {context_used}\nQısa cavab qaralaması yaz."
             )

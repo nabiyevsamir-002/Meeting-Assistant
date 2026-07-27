@@ -1292,10 +1292,14 @@ function render() {
     `</section>`;
 
   // Sağ sütun: suallar/cavablar
+  // Ən son verilən sual HƏMİŞƏ yuxarıda olur (xronoloji, yenidən köhnəyə).
+  // Əvvəllər ünvanlı suallar zorla yuxarı qaldırılırdı — bu, yeni sualı 2-3-cü
+  // sıraya salırdı. İndi ünvanlı suallar yalnız qırmızı vurğu + «sizə» nişanı
+  // ilə seçilir, sıranı pozmur. «Sizə» rejimi yalnız ünvanlıları süzür.
   const all = Array.from(items.values()).reverse();
   const ordered = answerMode === "directed"
     ? all.filter((it) => it.directed)
-    : [...all.filter((it) => it.directed), ...all.filter((it) => !it.directed)];
+    : all;
   const cards = ordered.length
     ? ordered.map(cardHtml).join("")
     : `<div class="listening"><div class="earpulse"></div>` +

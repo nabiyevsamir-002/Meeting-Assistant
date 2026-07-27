@@ -28,7 +28,7 @@ STRUCTURE_ANSWERS = """Give 3 fluent answer options to the question, each in a d
 # Live streaming single answer — the user can say it directly.
 # Grounding guard (D): use ONLY the context; if it does not cover the question,
 # say briefly it is not in the documents instead of inventing facts.
-ANSWER_STREAM = """Write a SHORT, natural, ready-to-say answer (2-3 sentences) to the question addressed to you, as if YOU are answering. Use ONLY the context to ground your answer; if the context does NOT contain the answer, briefly say it is not in the documents instead of inventing facts. No filler. Write in Azerbaijani.
+ANSWER_STREAM = """Write a SHORT, natural, ready-to-say answer (2-3 sentences) to the question addressed to you, as if YOU are answering. Use ONLY the context to ground your answer. Read ALL of the context blocks carefully before deciding — the answer (a number, percentage, amount, name, or date) may appear anywhere in them, not only in the first block. Only if none of the context blocks contain the answer, briefly say this specific detail is not in the documents; never invent facts. No filler. Write in Azerbaijani.
 <question>
 {question}
 </question>

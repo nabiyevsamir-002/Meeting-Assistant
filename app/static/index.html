@@ -1136,21 +1136,43 @@ function statusLine() {
 }
 
 /* --- SSE (streaming) --- */
-let es = null;
-function stopStream() { if (es) { try { es.close(); } catch (_) {} es = null; } }
-function startStream() {
+// SSE axını fetch ilə oxunur (EventSource Authorization başlığı göndərə bilmir —
+// prod-da giriş açıq olduğu üçün EventSource 401 alırdı; fetch token-i göndərir).
+let es = null;   // aktiv axının AbortController-i
+function stopStream() { if (es) { try { es.abort(); } catch (_) {} es = null; } }
+async function startStream() {
   stopStream();
   if (!meeting) return;
+  const ctrl = new AbortController();
+  es = ctrl;
+  const id = meeting.id;
   try {
-    es = new EventSource(`/api/meetings/${meeting.id}/stream?after_id=${lastId}`);
-    es.onmessage = (ev) => {
-      try {
-        if (handleEvent(JSON.parse(ev.data))) render();
-        statusLine();
-      } catch (_) { /* pozuq hadisə */ }
-    };
-    es.onerror = () => { stopStream(); };  // polling fallback
-  } catch (_) { /* EventSource yoxdur — polling qalır */ }
+    const r = await fetch(`/api/meetings/${id}/stream?after_id=${lastId}`, {
+      headers: token ? { "Authorization": "Bearer " + token } : {},
+      signal: ctrl.signal,
+    });
+    if (!r.ok || !r.body) { if (es === ctrl) es = null; return; }  // uğursuz → polling ehtiyatı
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (es !== ctrl || !meeting || meeting.id !== id) break;  // dayandırılıb
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {          // SSE hadisələri "\n\n" ilə ayrılır
+        const block = buf.slice(0, idx); buf = buf.slice(idx + 2);
+        const line = block.split("\n").find((l) => l.startsWith("data:"));
+        if (!line) continue;
+        try {
+          if (handleEvent(JSON.parse(line.slice(5).trim()))) render();
+          statusLine();
+        } catch (_) { /* pozuq hadisə */ }
+      }
+    }
+  } catch (_) { /* şəbəkə/abort — polling davam edir */ }
+  if (es === ctrl) es = null;   // axın bitdi → poll() feed-polling ehtiyatına keçir
 }
 
 /* --- Polling: SSE ehtiyatı + iclasa qoşulma --- */

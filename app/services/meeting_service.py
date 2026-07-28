@@ -49,6 +49,10 @@ class MeetingRuntime:
 
 # Canlı iclasların reyestri: meeting_id -> MeetingRuntime
 _registry: dict[str, MeetingRuntime] = {}
+# Reyestr yaradılmasını qoruyan kilid: iki audio parçası eyni anda gələndə
+# (məs. ser/restartdan sonra) eyni iclas üçün İKİ ayrı runtime (iki yaddaş,
+# iki dedup) yaranmasının qarşısını alır.
+_registry_lock = threading.Lock()
 
 
 def reset_registry() -> None:
@@ -63,10 +67,19 @@ def get_memory(meeting_id: str) -> Optional[MeetingMemory]:
 
 
 def _get_runtime(meeting_id: str) -> MeetingRuntime:
-    """İclasın runtime-ını qaytarır, yoxdursa yaradır."""
-    if meeting_id not in _registry:
-        _registry[meeting_id] = MeetingRuntime(memory=MeetingMemory(get_llm()))
-    return _registry[meeting_id]
+    """İclasın runtime-ını qaytarır, yoxdursa yaradır (thread-safe).
+
+    İkiqat yoxlamalı kilid: adi halda kilidsiz oxuyuruq (sürətli), yalnız
+    runtime yoxdursa kilid altında yenidən yoxlayıб yaradırıq — beləliklə
+    paralel çağırışlar eyni iclas üçün tək runtime paylaşır."""
+    rt = _registry.get(meeting_id)
+    if rt is None:
+        with _registry_lock:
+            rt = _registry.get(meeting_id)
+            if rt is None:
+                rt = MeetingRuntime(memory=MeetingMemory(get_llm()))
+                _registry[meeting_id] = rt
+    return rt
 
 
 def start_meeting(meeting: Meeting) -> Meeting:
@@ -103,23 +116,59 @@ def process_audio_chunk(meeting: Meeting, audio: bytes, filename: str) -> Transc
         if not fresh or fresh.status != "live":
             return  # iclas bitib və ya silinib — emal etmirik
         rt = _get_runtime(meeting.id)  # yoxdursa yaradır → restartdan sonra da işləyir
-        with rt.lock:
-            if rt.ended:  # kilidi gözləyərkən iclas bitibsə emal etmirik
-                return
-            try:
-                process_text_segment(fresh, SegmentIn(text=result.text))
-            except Exception:  # noqa: BLE001 — arxa plan xətası serveri yıxmasın
-                logger.exception("Arxa plan seqment emalı alınmadı")
+        if rt.ended:  # sürətli yoxlama (dəqiqi _ingest_and_detect-də kilid altındadır)
+            return
+        # Qeyd: kilid ARTIQ burada tutulmur — process_text_segment yaddaş/aşkarlamanı
+        # öz içində qısa kilidlə qoruyur, cavab axını isə kiliddən kənar işləyir.
+        # Beləliklə bu parçanın cavabı axarkən növbəti parça paralel aşkarlanır.
+        try:
+            process_text_segment(fresh, SegmentIn(text=result.text))
+        except Exception:  # noqa: BLE001 — arxa plan xətası serveri yıxmasın
+            logger.exception("Arxa plan seqment emalı alınmadı")
 
     threading.Thread(target=_bg, daemon=True).start()
     return TranscriptSegment(meeting_id=meeting.id, seq=0, text=result.text)
 
 
 def process_text_segment(meeting: Meeting, seg_in: SegmentIn) -> TranscriptSegment:
-    """Bir transkript seqmentini tam pipeline-dan keçirir."""
+    """Bir transkript seqmentini tam pipeline-dan keçirir.
+
+    SÜRƏT/ARDICILLIQ: yaddaş yazımı + sual aşkarlama + dedup + xülasə iclas kilidi
+    ALTINDA icra olunur (LangChain yaddaşı thread-safe deyil; ardıcıllıq qorunur).
+    LAKİN cavab generasiyası (axan, stateless — yaddaşa toxunmur) kiliddən KƏNAR
+    işləyir. Beləliklə bir sualın cavabı axarkən NÖVBƏTİ seqment paralel aşkarlanır
+    — yeni sual gec görünmür (baş-sıra bloklanması aradan qalxır)."""
+    rt = _get_runtime(meeting.id)
+    segment, to_answer = _ingest_and_detect(meeting, rt, seg_in)
+    if segment is None:  # iclas bitib — emal atlandı
+        return TranscriptSegment(meeting_id=meeting.id, seq=0, text="")
+
+    # 3-4) Cavabları hazırla — KİLİDDƏN KƏNAR. Axan cavab digər seqmentlərin
+    # aşkarlanmasını bloklamır. Bir seqmentdə birdən çox sual olsa PARALEL.
+    if to_answer and not rt.ended:
+        if len(to_answer) > 1 and get_settings().live_fast_answers:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=min(3, len(to_answer))) as ex:
+                list(ex.map(lambda qq: _answer_question_safe(meeting, rt, qq), to_answer))
+        else:
+            for qq in to_answer:
+                if rt.ended:
+                    break
+                _answer_question_safe(meeting, rt, qq)
+
+    return segment
+
+
+def _ingest_and_detect(
+    meeting: Meeting, rt: MeetingRuntime, seg_in: SegmentIn
+) -> tuple[Optional[TranscriptSegment], list[str]]:
+    """Seqmenti yaddaşa yazır, sualları aşkarlayır və dedup edir — HAMISI iclas
+    kilidi altında (ardıcıllıq + LangChain yaddaş təhlükəsizliyi). Cavablanacaq
+    sualların siyahısını qaytarır; cavabların özü kiliddən KƏNAR hazırlanır.
+    İclas bitibsə (None, []) qaytarır."""
     settings = get_settings()
     llm = get_llm()
-    rt = _get_runtime(meeting.id)
     # Ad iclasa bağlıdır: kim daxil olubsa, suallar ONA görə süzülür
     user_name = meeting.user_name or settings.user_name
 
@@ -127,62 +176,56 @@ def process_text_segment(meeting: Meeting, seg_in: SegmentIn) -> TranscriptSegme
     # əvvəl təmizləyirik ki, həm sual aşkarlama, həm cavab dəqiq olsun
     text = correct_transcript(seg_in.text)
 
-    # 1) Seqmenti saxla və yaddaşa əlavə et
-    seq = repo.next_segment_seq(meeting.id)
-    segment = TranscriptSegment(
-        meeting_id=meeting.id, seq=seq, text=text, speaker=seg_in.speaker
-    )
-    repo.save_segment(segment)
-    rt.memory.add_segment(text, seg_in.speaker)
-    rt.segment_count += 1
-    repo.add_feed_event(meeting.id, "segment",
-                        {"seq": seq, "text": text, "speaker": seg_in.speaker})
+    with rt.lock:
+        if rt.ended:  # iclas bitibsə gecikən arxa plan işi atlanır
+            return None, []
 
-    # 2) Sual aşkarlama (structured output).
-    # A: LLM-dən ƏVVƏL lokal ön-filtr — sual əlaməti ("?", sual sözü, ad)
-    # yoxdursa LLM çağırışını TAM atlayırıq (seqmentlərin çoxu adi cümlədir).
-    detected = DetectedQuestions()
-    if not settings.local_prefilter or has_question_signal(text, user_name):
-        try:
-            detected = llm.generate_structured(
-                DETECT_QUESTIONS.format(user_name=user_name, text=text),
-                DetectedQuestions,
-            )
-        except Exception as exc:  # noqa: BLE001 — aşkarlama xətası axını dayandırmasın
-            logger.warning("Sual aşkarlama alınmadı: %s", exc)
-            detected = DetectedQuestions()
+        # 1) Seqmenti saxla və yaddaşa əlavə et
+        seq = repo.next_segment_seq(meeting.id)
+        segment = TranscriptSegment(
+            meeting_id=meeting.id, seq=seq, text=text, speaker=seg_in.speaker
+        )
+        repo.save_segment(segment)
+        rt.memory.add_segment(text, seg_in.speaker)
+        rt.segment_count += 1
+        do_summary = rt.segment_count % settings.quick_summary_every == 0
+        repo.add_feed_event(meeting.id, "segment",
+                            {"seq": seq, "text": text, "speaker": seg_in.speaker})
 
-    # C: yaxınlarda cavablanmış eyni sualı təkrar emal etmirik (dublikatsız).
-    # answer_only_directed=True olduqda yalnız ünvanlı suallara cavab hazırlanır.
-    now = time.monotonic()
-    window = settings.answer_dedup_seconds
-    to_answer: list[str] = []
-    for q in detected.questions:
-        norm = _normalize_q(q.question)
-        last = rt.answered.get(norm)
-        if last is not None and (now - last) < window:
-            continue  # C: son N saniyədə eyni sual — nə emit, nə cavab
-        rt.answered[norm] = now
-        repo.add_feed_event(meeting.id, "question", q.model_dump())
-        if not settings.answer_only_directed or _is_directed(q, user_name):
-            to_answer.append(q.question)
+        # 2) Sual aşkarlama (structured output).
+        # A: LLM-dən ƏVVƏL lokal ön-filtr — sual əlaməti ("?", sual sözü, ad)
+        # yoxdursa LLM çağırışını TAM atlayırıq (seqmentlərin çoxu adi cümlədir).
+        detected = DetectedQuestions()
+        if not settings.local_prefilter or has_question_signal(text, user_name):
+            try:
+                detected = llm.generate_structured(
+                    DETECT_QUESTIONS.format(user_name=user_name, text=text),
+                    DetectedQuestions,
+                )
+            except Exception as exc:  # noqa: BLE001 — aşkarlama xətası axını dayandırmasın
+                logger.warning("Sual aşkarlama alınmadı: %s", exc)
+                detected = DetectedQuestions()
 
-    # 3-4) Cavabları hazırla. Bir seqmentdə birdən çox sual olsa, PARALEL
-    # (sürətli rejimdə çağırışlar stateless-dir; agent rejimində ardıcıl saxlayırıq)
-    if len(to_answer) > 1 and settings.live_fast_answers:
-        from concurrent.futures import ThreadPoolExecutor
+        # C: yaxınlarda cavablanmış eyni sualı təkrar emal etmirik (dublikatsız).
+        # answer_only_directed=True olduqda yalnız ünvanlı suallara cavab hazırlanır.
+        now = time.monotonic()
+        window = settings.answer_dedup_seconds
+        to_answer: list[str] = []
+        for q in detected.questions:
+            norm = _normalize_q(q.question)
+            last = rt.answered.get(norm)
+            if last is not None and (now - last) < window:
+                continue  # C: son N saniyədə eyni sual — nə emit, nə cavab
+            rt.answered[norm] = now
+            repo.add_feed_event(meeting.id, "question", q.model_dump())
+            if not settings.answer_only_directed or _is_directed(q, user_name):
+                to_answer.append(q.question)
 
-        with ThreadPoolExecutor(max_workers=min(3, len(to_answer))) as ex:
-            list(ex.map(lambda qq: _answer_question_safe(meeting, rt, qq), to_answer))
-    else:
-        for qq in to_answer:
-            _answer_question_safe(meeting, rt, qq)
+        # 5) Hər N seqmentdən bir sürətli xülasə (yaddaşa toxunur → kilid altında)
+        if do_summary:
+            _quick_summary(meeting, rt)
 
-    # 5) Hər N seqmentdən bir sürətli xülasə
-    if rt.segment_count % settings.quick_summary_every == 0:
-        _quick_summary(meeting, rt)
-
-    return segment
+    return segment, to_answer
 
 
 def _normalize_q(question: str) -> str:

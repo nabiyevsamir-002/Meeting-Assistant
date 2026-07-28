@@ -87,9 +87,20 @@ def _db_path() -> str:
 
 @contextmanager
 def get_conn() -> Iterator[sqlite3.Connection]:
-    """Sətirlərə dict kimi baxmağa imkan verən bağlantı konteksti."""
-    conn = sqlite3.connect(_db_path())
+    """Sətirlərə dict kimi baxmağa imkan verən bağlantı konteksti.
+
+    ETİBARLILIQ/SÜRƏT (donma qarşısı): WAL rejimi (init_db-də davamlı qurulur)
+    oxucular (SSE feed-i hər 0.2s oxuyur) və yazıçıların (canlı feed hadisələri,
+    axan cavab hər ~24 simvolda bir yazır, paralel cavab thread-ləri eyni anda
+    yazır) bir-birini BLOKLAMAMASINI təmin edir. WAL-siz standart jurnalda bu
+    paralel oxu/yazı «database is locked» gecikmələrinə (busy_timeout-a qədər) və
+    hətta itən feed hadisələrinə (→ görünməyən cavab) səbəb olurdu.
+    busy_timeout qısa toqquşmaları səbirlə gözlədir; synchronous=NORMAL WAL ilə
+    təhlükəsizdir və fsync yükünü azaldır."""
+    conn = sqlite3.connect(_db_path(), timeout=5.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")   # toqquşmada 5s-ə qədər səbirlə gözlə
+    conn.execute("PRAGMA synchronous=NORMAL")  # WAL ilə təhlükəsiz, daha az fsync
     try:
         yield conn
         conn.commit()
@@ -100,6 +111,9 @@ def get_conn() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     """Bütün cədvəlləri yaradır (mövcuddursa toxunmur) və miqrasiyaları tətbiq edir."""
     with get_conn() as conn:
+        # WAL: davamlı, DB-səviyyə xüsusiyyət — bir dəfə qurulur, bütün bağlantılara
+        # şamil olunur. Oxucu/yazıçı bir-birini bloklamır (canlı feed üçün kritik).
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
         # Miqrasiya: köhnə bazalarda user_name sütunu yoxdur — əlavə edirik.
         # (İclasa bağlı ad: suallar "bu şəxsə ünvanlanıb?" yoxlamasında istifadə olunur.)

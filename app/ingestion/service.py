@@ -80,6 +80,32 @@ def ingest_document(req: IngestRequest) -> IngestResult:
                         chunk_count=len(chunks), backend=vectors.name)
 
 
+def reset_knowledge_base() -> int:
+    """Bütün bilik bazasını təmizləyir — vektor kolleksiyası + öncədən Q&A keşi
+    + sənəd metadatası.
+
+    SƏBƏB: bilik bazası TƏK, qlobal kolleksiyadır və köhnə sənəd silinmirdi.
+    Yeni sənəd (məs. OpenAI) yüklənəndə köhnə sənədin (məs. Nexora) parçaları
+    bazada qalırdı; suallar Azərbaycanca verildiyi üçün köhnə Azərbaycan dilli
+    parçalar yeni (ing. dilli) parçaları axtarışda üstələyir → «sənəddə yoxdur»
+    və ya köhnə sənədə aid yanlış cavablar yaranırdı. Yeni sənəd yüklənməzdən
+    əvvəl bunu çağırıб köhnəni tam silirik. Silinən sənəd sayını qaytarır."""
+    settings = get_settings()
+    vectors = get_vectors()
+    try:
+        vectors.clear_collection(settings.qdrant_collection_context)
+    except Exception as exc:  # noqa: BLE001 — təmizləmə xətası ingest-i pozmasın
+        logger.warning("Vektor kolleksiyası təmizlənmədi: %s", exc)
+    # J: öncədən hazırlanmış Q&A keşi də qlobaldır — köhnə sənədin cavabları
+    # qalmasın deyə onu da sıfırlayırıq
+    from app.services import prepared_qa
+
+    prepared_qa.reset()
+    removed = repo.clear_documents()
+    logger.info("Bilik bazası təmizləndi (%d sənəd silindi)", removed)
+    return removed
+
+
 def search_context(query: str, top_k: int | None = None) -> list[dict]:
     """Bilik bazasında semantik axtarış — agentin əsas aləti."""
     settings = get_settings()

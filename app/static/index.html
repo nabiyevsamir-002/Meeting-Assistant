@@ -415,7 +415,12 @@
   .modes-wrap .lbl { display:block; margin:0 0 6px 2px; }
 
   .kbchip { margin-top:11px; font-size:12px; color:var(--green); background:rgba(61,220,151,.1);
-    border:1px solid rgba(61,220,151,.25); border-radius:11px; padding:9px 12px; }
+    border:1px solid rgba(61,220,151,.25); border-radius:11px; padding:9px 12px;
+    display:flex; align-items:center; gap:8px; }
+  .kbclear { margin-left:auto; background:rgba(251,113,133,.12); border:1px solid rgba(251,113,133,.3);
+    color:var(--red); border-radius:8px; padding:3px 8px; font-size:12px; cursor:pointer; line-height:1;
+    box-shadow:none; }
+  .kbclear:hover { background:rgba(251,113,133,.2); }
 
   /* İdle qarşılama (başlamamış — «Dinləyirəm» əvəzinə) */
   .welcome { text-align:center; padding:40px 18px 34px; animation:fade .4s; }
@@ -471,7 +476,7 @@
       <button id="endBtn" class="danger" title="Cari iclası bitir (hesabat yaranır)">⏹ İclası bitir</button>
     </div>
     <label for="pdf" class="drop">
-      <input type="file" id="pdf" accept=".pdf,.txt" hidden>
+      <input type="file" id="pdf" accept=".pdf,.txt" multiple hidden>
       <span class="di">📄</span>
       <span><b>Bilik bazası</b> — sənədi seçin və ya bura atın</span>
     </label>
@@ -777,12 +782,16 @@ $("endBtn").onclick = async () => {
 };
 
 // Faylı bilik bazasına yükləyir (düymə + drag-and-drop) + mərhələ göstəricisi
-async function uploadFile(f) {
+// replace=true (default): köhnə bilik bazası bu sənədlə ƏVƏZLƏNİR (köhnə sənəd
+// yeni suallara qarışmasın). Bir neçə fayl birlikdə seçiləndə yalnız BİRİNCİsi
+// replace=true olur, qalanları əlavə olunur (sənəd + FAQ birlikdə).
+async function uploadFile(f, replace = true) {
   if (!f) { setStatus("Fayl tapılmadı", false); return; }
   const name = (f.name || "").toLowerCase();
   if (!name.endsWith(".pdf") && !name.endsWith(".txt")) {
     setStatus("Yalnız PDF və ya mətn faylı olmalıdır", false); return;
   }
+  if (replace) ingestedDocs = [];  // əvəzləmə: köhnə sənəd siyahısını təmizlə
   const fd = new FormData();
   fd.append("file", f);
   ingestState = { title: f.name, shown: 0, target: 1, total: 4, done: false, error: false, chunks: 0, qa: 0, doc_id: null };
@@ -793,7 +802,7 @@ async function uploadFile(f) {
   });
   setStatus(`📄 «${esc(f.name)}» yüklənir…`, true);
   try {
-    const r = await api("/api/ingest/file", { method: "POST", body: fd });
+    const r = await api(`/api/ingest/file?replace=${replace ? "true" : "false"}`, { method: "POST", body: fd });
     if (ingestState) { ingestState.chunks = r.chunk_count; ingestState.doc_id = r.doc_id; ingestState.target = 2; ingestState.title = r.title; }
     setStatus(`📄 «${esc(r.title)}» yükləndi — ${r.chunk_count} parça.`, true);
     pollIngest(r.doc_id);
@@ -802,7 +811,35 @@ async function uploadFile(f) {
     setStatus("Yükləmə xətası: " + esc(e.message), false);
   }
 }
-$("pdf").onchange = () => { if ($("pdf").files[0]) uploadFile($("pdf").files[0]); };
+$("pdf").onchange = async () => {
+  const files = Array.from($("pdf").files || []);
+  // Bir neçə fayl birlikdə: birincisi köhnə bazanı əvəzləyir, qalanları əlavə olunur
+  for (let i = 0; i < files.length; i++) await uploadFile(files[i], i === 0);
+  $("pdf").value = "";  // eyni faylı yenidən seçə bilmək üçün sıfırla
+};
+
+// Serverdəki cari bilik bazasını yüklə — beləliklə səhifə yenilənəndə də hansı
+// sənədlərin yükləndiyi (və «təmizlə» düyməsi) görünür (client state itsə də).
+async function loadKbDocs() {
+  try {
+    const docs = await api("/api/ingest/documents");
+    ingestedDocs = [...new Set(docs.map((d) => d.title).filter(Boolean))];
+    if (!ingestState) renderIngest();
+  } catch (_) { /* auth yoxdursa login-dən sonra reload ilə yenidən çağırılır */ }
+}
+
+// Bilik bazasını təmizləmə düyməsi (KB çipindəki 🗑)
+async function clearKnowledgeBase() {
+  if (!confirm("Bilik bazasındakı bütün sənədləri silmək istəyirsiniz?")) return;
+  try {
+    const r = await api("/api/ingest/documents", { method: "DELETE" });
+    ingestedDocs = []; ingestState = null; renderIngest();
+    setStatus(`🗑 Bilik bazası təmizləndi (${r.cleared || 0} sənəd)`, true);
+  } catch (e) {
+    setStatus("Təmizləmə xətası: " + esc(e.message), false);
+  }
+}
+window.clearKnowledgeBase = clearKnowledgeBase;
 
 // Emal mərhələlərini poll edir (suallar çıxarılması arxa planda gedir) — yalnız
 // target/done yeniləyir; addımları pacer bir-bir doldurur (tullanma olmur).
@@ -834,7 +871,8 @@ function renderIngest() {
   if (!ingestState) {
     // Davamlı təsdiq: yüklənmiş sənədlər bilik bazasındadır (native "fayl seçilmədi" mətnini əvəz edir)
     el.innerHTML = ingestedDocs.length
-      ? `<div class="kbchip">✅ Bilik bazası: ${ingestedDocs.map(esc).join(", ")}</div>` : "";
+      ? `<div class="kbchip">✅ Bilik bazası: ${ingestedDocs.map(esc).join(", ")}` +
+        `<button class="kbclear" onclick="clearKnowledgeBase()" title="Bütün sənədləri sil">🗑</button></div>` : "";
     return;
   }
   const s = ingestState, qa = s.qa || 0, shown = s.shown || 0;
@@ -1057,8 +1095,8 @@ applyModeButtons();
   window.addEventListener("drop", (e) => {
     if (!hasFiles(e)) return;
     e.preventDefault(); depth = 0; dz.classList.remove("on");
-    const f = e.dataTransfer.files[0];
-    if (f) uploadFile(f);
+    const files = Array.from(e.dataTransfer.files || []);
+    (async () => { for (let i = 0; i < files.length; i++) await uploadFile(files[i], i === 0); })();
   });
 })();
 
@@ -1195,6 +1233,7 @@ async function poll() {
   }
 }
 render();          // başlanğıcda sakit qarşılama (idle) göstərilir
+loadKbDocs();      // serverdəki cari bilik bazasını göstər (təmizlə düyməsi görünsün)
 setInterval(poll, 2000);
 poll();
 

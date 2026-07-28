@@ -159,6 +159,13 @@ def list_documents() -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def clear_documents() -> int:
+    """Bütün sənəd metadatasını silir (bilik bazası sıfırlananda); silinən sayı."""
+    with get_conn() as c:
+        cur = c.execute("DELETE FROM documents")
+        return cur.rowcount
+
+
 # --- Hesabatlar ---
 
 def save_report(r: MeetingReport) -> None:

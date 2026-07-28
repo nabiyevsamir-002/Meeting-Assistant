@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import require_user
-from app.ingestion.service import extract_pdf_text, ingest_document, search_context
+from app.ingestion.service import (
+    extract_pdf_text,
+    ingest_document,
+    reset_knowledge_base,
+    search_context,
+)
 from app.models.core import IngestRequest, IngestResult
 from app.storage import repo
 
@@ -25,14 +30,22 @@ def ingest(req: IngestRequest) -> IngestResult:
 
 
 @router.post("/file", response_model=IngestResult)
-async def ingest_file(file: UploadFile) -> IngestResult:
-    """PDF və ya mətn faylını yükləyib bilik bazasına salır."""
+async def ingest_file(file: UploadFile, replace: bool = True) -> IngestResult:
+    """PDF və ya mətn faylını yükləyib bilik bazasına salır.
+
+    replace=True (default): yükləmədən əvvəl KÖHNƏ bilik bazası tam təmizlənir —
+    beləliklə köhnə sənədin (məs. Nexora) parçaları yeni sənədin (məs. OpenAI)
+    suallarına qarışmır. Bir neçə sənədi (məs. sənəd + FAQ) birlikdə yükləmək
+    üçün ilki replace=True, qalanları replace=False göndərilir (UI bunu edir).
+    """
     data = await file.read()
     name = file.filename or "document"
 
     def _process() -> IngestResult:
         # PDF çıxarışı (CPU) + embedding (şəbəkə) sinxrondur — event loop-u
-        # kilidləməmək üçün thread hovuzunda icra olunur
+        # kilidləməmək üçün thread hovuzunda icra olunur.
+        # VACİB: mətni ƏVVƏLCƏ çıxarıб yoxlayırıq, YALNIZ uğurlu olsa köhnə bazanı
+        # təmizləyirik — yoxsa xarab PDF köhnə bazanı da silib boş baza qoyardı.
         if name.lower().endswith(".pdf"):
             content = extract_pdf_text(data)
             # Skan/şəkil PDF-lərdə mətn qatı olmur → aydın izah veririk
@@ -46,6 +59,8 @@ async def ingest_file(file: UploadFile) -> IngestResult:
         else:
             content = data.decode("utf-8", errors="replace")
             source_type = "text"
+        if replace:
+            reset_knowledge_base()  # köhnə sənədləri təmizlə (yalnız yeni mətn etibarlı olanda)
         return ingest_document(
             IngestRequest(title=name, content=content, source_type=source_type)
         )
@@ -73,3 +88,11 @@ def ingest_status_ep(doc_id: str) -> dict:
 def documents() -> list[dict]:
     """Yüklənmiş sənədlərin siyahısı."""
     return repo.list_documents()
+
+
+@router.delete("/documents")
+def clear_documents() -> dict:
+    """Bütün bilik bazasını təmizləyir (vektor + öncədən Q&A + sənəd metadatası).
+    UI-dakı «🗑 Bilik bazasını təmizlə» düyməsi bunu çağırır."""
+    removed = reset_knowledge_base()
+    return {"cleared": removed}

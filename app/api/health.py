@@ -11,7 +11,7 @@ router = APIRouter()
 # (GitHub Actions rəngi deploy-un getdiyini GARANTİ ETMİR — deploy addımları
 # continue-on-error-dur — ona görə həqiqəti bu marker göstərir). Hər əhəmiyyətli
 # backend deploy-da yeni dəyər qoyun.
-BUILD = "wal-lock-2026-07-28"
+BUILD = "kb-replace-2026-07-28"
 
 
 @router.get("/health")

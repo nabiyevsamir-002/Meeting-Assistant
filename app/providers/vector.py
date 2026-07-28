@@ -53,6 +53,11 @@ class BaseVectorStore(ABC):
     def count(self, collection: str) -> int:
         """Kolleksiyadakı nöqtə sayı."""
 
+    @abstractmethod
+    def clear_collection(self, collection: str) -> None:
+        """Kolleksiyanı tam boşaldır (bütün nöqtələri silir).
+        Yeni sənəd köhnəsi ilə qarışmasın deyə bilik bazası sıfırlanarkən çağırılır."""
+
 
 class InMemoryVectorStore(BaseVectorStore):
     """Sadə in-memory saxlama — mock rejim və testlər üçün."""
@@ -90,6 +95,9 @@ class InMemoryVectorStore(BaseVectorStore):
 
     def count(self, collection: str) -> int:
         return len(self._data.get(collection, {}))
+
+    def clear_collection(self, collection: str) -> None:
+        self._data.pop(collection, None)
 
 
 class QdrantVectorStore(BaseVectorStore):
@@ -146,6 +154,12 @@ class QdrantVectorStore(BaseVectorStore):
 
     def count(self, collection: str) -> int:
         return int(self._client.count(collection_name=collection).count)
+
+    def clear_collection(self, collection: str) -> None:
+        # Kolleksiyanı tamamilə silirik; növbəti ingest ensure_collection ilə
+        # onu yenidən (düzgün ölçü/məsafə ilə) yaradır.
+        if self._client.collection_exists(collection):
+            self._client.delete_collection(collection_name=collection)
 
 
 def create_vector_store(settings: Settings) -> BaseVectorStore:

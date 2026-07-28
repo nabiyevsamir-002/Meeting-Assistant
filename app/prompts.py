@@ -7,11 +7,13 @@ also let the mock provider extract the relevant part by rule.
 """
 
 # Question detection during the meeting
-DETECT_QUESTIONS = """Find the QUESTIONS in this transcript chunk, especially any addressed to the user ("{user_name}"). Skip rhetorical questions.
+DETECT_QUESTIONS = """This is a RAW speech-to-text transcript from a live meeting. Punctuation — including the question mark "?" — is OFTEN MISSING, and word endings are sometimes garbled by the STT, so a real question frequently looks like a plain statement (e.g. the STT may write "what you know about the main facts" for the spoken "what do you know about the main facts?").
+
+Identify EVERY utterance the speaker likely INTENDS as a question — anything asking for information, an opinion, a decision, or an action — even if it has no question mark, is phrased as a statement, or is grammatically imperfect. Pay special attention to anything addressed to the user ("{user_name}"). Only skip questions that are clearly rhetorical (expect no answer). When in doubt, DO treat it as a question — a missed question is worse than an extra one.
 <text>
 {text}
 </text>
-For each question: the question text, whether it is addressed to the user, urgency, confidence."""
+For each question: the question text REWRITTEN as a clean, natural, well-formed question in the same language (fix the missing "?" and any garbled endings); whether it is addressed to the user; urgency; confidence."""
 
 # Structure answer options (after the agent result)
 STRUCTURE_ANSWERS = """Give 3 fluent answer options to the question, each in a different tone: short, detailed, diplomatic. Mark the ones grounded in the context. Write the answers in Azerbaijani.

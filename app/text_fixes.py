@@ -51,13 +51,14 @@ def correct_transcript(text: str) -> str:
 # qəsdən tam sözlə verilir ki, "nəzər", "nəticə" kimi sözlər YANLIŞ müsbət
 # verməsin — əks halda filtr heç vaxt işə yaramazdı).
 _QWORDS = {
-    "nə", "nədir", "nədən", "nəyə", "nələr", "nəçün",
-    "niyə", "niə", "necə", "neçə", "neçəyə",
-    "hansı", "hansını", "harada", "hara", "haraya", "haçan",
+    "nə", "nədir", "nədi", "nədən", "nəyə", "nələr", "nəçün", "nəydi",
+    "niyə", "niə", "necə", "neçə", "neçəyə", "nətər",
+    "nolub", "noldu",                         # danışıq dilində "nə olub/oldu"
+    "hansı", "hansını", "harada", "hara", "haraya", "haçan", "havaxt", "hanı",
     "kim", "kimdir", "kimə", "kimlər",
-    "sizcə", "olarmı", "varmı", "yoxdurmu", "doğrudurmu",
+    "sizcə", "olarmı", "varmı", "yoxdurmu", "doğrudurmu", "bilirsinizmi",
 }
-_QPHRASES = ("nə vaxt", "nə üçün", "nə qədər", "nə cür")
+_QPHRASES = ("nə vaxt", "nə üçün", "nə qədər", "nə cür", "nə bilir", "nə düşün", "fikriniz nə")
 # Arxa-saitli sual enklitiki (mı/mu/mü) — demək olar həmişə sualdır
 # ("varmı", "oldumu", "doğrudurmu"). Ön-saitli "mi" qəsdən buraxılıb, çünki
 # "kimi", "sistemi", "problemi" kimi adi sözlər də onunla bitir.

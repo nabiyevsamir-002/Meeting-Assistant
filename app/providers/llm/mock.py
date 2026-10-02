@@ -92,7 +92,7 @@ class MockLLMProvider(BaseLLMProvider):
         if snip:
             text = f"Fikrimcə, {snip} Əlavə detalları yüklənmiş sənədə əsasən dəqiqləşdirə bilərəm."
         else:
-            text = ("Bu barədə dəqiq məlumatı yoxlayıб bir azdan qayıdım; "
+            text = ("Bu barədə dəqiq məlumatı yoxlayıb bir azdan qayıdım; "
                     "istəsəniz komanda ilə də dəqiqləşdirim.")
         for word in text.split(" "):
             yield word + " "

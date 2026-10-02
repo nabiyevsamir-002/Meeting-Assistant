@@ -1,5 +1,8 @@
 # 🎙 AI Meeting Assistant
 
+[![CI](https://github.com/nabiyevsamir-002/Meeting-Assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/nabiyevsamir-002/Meeting-Assistant/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 ## Overview (English)
 
 An AI assistant for online meetings that removes the need to take notes: you focus on the conversation, and the system handles the rest.
@@ -10,6 +13,18 @@ An AI assistant for online meetings that removes the need to take notes: you foc
 - **Runs without API keys:** every external service has a mock provider, so `make install && make run` starts a working demo at http://localhost:8000. Real providers are switched on with environment variables.
 
 **Stack:** Python 3.11 · FastAPI · LangChain · LangGraph · Instructor · Claude / OpenAI · Qdrant · mem0 · ElevenLabs · n8n · SQLite · APScheduler · Docker · nginx · GitHub Actions
+
+### Screenshots
+
+These were taken in demo mode, so the transcript is scripted and the answers come from the mock LLM.
+
+**During the meeting:** live transcript on the left, detected questions with suggested answers on the right.
+
+![Live meeting view](docs/screenshots/live-meeting.png)
+
+**After the meeting:** summary, key points, action items with owner and deadline, and the full transcript.
+
+![Meeting report](docs/screenshots/meeting-report.png)
 
 *The rest of this README is in Azerbaijani.*
 

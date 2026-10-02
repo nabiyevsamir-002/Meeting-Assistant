@@ -1,5 +1,20 @@
 # 🎙 AI Meeting Assistant
 
+## Overview (English)
+
+An AI assistant for online meetings that removes the need to take notes: you focus on the conversation, and the system handles the rest.
+
+- **Before the meeting:** an n8n workflow collects topic material (web pages, PDFs, OCR), chunks and embeds it, and loads it into a Qdrant knowledge base. Upcoming meetings from Google Calendar are prepared automatically.
+- **During the meeting:** system audio is captured in 20-second chunks (BlackHole) and transcribed with ElevenLabs Scribe. The assistant detects questions and gives quick summaries. For questions you missed, a LangChain ReAct agent suggests 2–3 answer options grounded in the knowledge base.
+- **After the meeting:** a LangGraph pipeline produces the full transcript, a structured summary, action items and a visual summary card, and n8n delivers them by email or Telegram. Each meeting is stored as episodic memory (Qdrant + mem0).
+- **Runs without API keys:** every external service has a mock provider, so `make install && make run` starts a working demo at http://localhost:8000. Real providers are switched on with environment variables.
+
+**Stack:** Python 3.11 · FastAPI · LangChain · LangGraph · Instructor · Claude / OpenAI · Qdrant · mem0 · ElevenLabs · n8n · SQLite · APScheduler · Docker · nginx · GitHub Actions
+
+*The rest of this README is in Azerbaijani.*
+
+---
+
 Onlayn iclaslarda **qeyd götürmə ehtiyacını aradan qaldıran** AI köməkçi —
 siz söhbətə fokuslanırsınız, sistem qalanını edir.
 
